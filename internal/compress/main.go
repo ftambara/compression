@@ -1,13 +1,88 @@
 package compress
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"unicode"
 )
 
-// codeBufferBits defines number of bits in code processing buffers
-const codeBufferBits = 64
+type HuffmanDecoder struct {
+	rd      io.Reader
+	tree    *huffmanTree
+	pending []byte
+}
+
+const (
+	// codeBufferBits defines number of bits in code processing buffers
+	codeBufferBits   = 64
+	decoderBufferLen = 8 * 1024
+)
+
+func NewHuffmanDecoder(rd io.Reader) *HuffmanDecoder {
+	return &HuffmanDecoder{
+		rd:      rd,
+		tree:    nil,
+		pending: make([]byte, 0, decoderBufferLen),
+	}
+}
+
+func (hd *HuffmanDecoder) SetTree(t *huffmanTree) {
+	hd.tree = t
+}
+
+func (hd *HuffmanDecoder) Read(buffer []byte) (int, error) {
+	if hd.tree == nil {
+		return 0, errors.New("on-the-fly tree generation not implemented yet")
+	}
+	if len(hd.pending) > 0 {
+		return 0, errors.New("must implement processing of pending bytes")
+	}
+
+	readbuff := make([]byte, decoderBufferLen)
+	totalN := 0
+
+	var code uint64
+	for {
+		n, err := hd.rd.Read(readbuff)
+		if err != nil && err != io.EOF {
+			return totalN, err
+		}
+
+		// Convert read bytes to code/s
+		for i := 0; i < n; i += 8 {
+			var fromBuf []byte
+			if i+8 > n {
+				// Would get an error, write to zero'd buffer
+				fromBuf = make([]byte, 8)
+				copy(fromBuf, readbuff[i:n])
+			} else {
+				fromBuf = readbuff[i : i+8]
+			}
+			code = binary.BigEndian.Uint64(fromBuf)
+
+			// Decode
+			written, err := hd.tree.decode(code, buffer[totalN:])
+
+			if written+totalN > len(buffer) {
+				// No more space left in output buffer
+				copy(hd.pending[:n-i], fromBuf)
+				return totalN, nil
+			}
+
+			totalN += written
+			if err != nil {
+				return totalN, err
+			}
+		}
+
+		if err == io.EOF {
+			break
+		}
+	}
+	return totalN, nil
+}
 
 type symbolCount struct {
 	symbol byte

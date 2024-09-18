@@ -1,6 +1,8 @@
 package compress
 
 import (
+	"bytes"
+	"io"
 	"slices"
 	"testing"
 )
@@ -63,6 +65,52 @@ func assertHuffmanDecoding(
 	}
 	if !slices.Equal(out[:written], expectedDecoded) {
 		t.Errorf("expected %v, got %v", expectedDecoded, out[:written])
+	}
+}
+
+var DefaultTree = newHuffmanTree(
+	newHuffmanInternalNode(
+		newHuffmanLeaf('a'),
+		newHuffmanInternalNode(
+			newHuffmanLeaf('b'),
+			newHuffmanLeaf('c'),
+		),
+	),
+)
+
+func TestHuffmanReader(t *testing.T) {
+	code := []byte{0b10101100}
+	buffer := bytes.NewBuffer(code)
+	hd := NewHuffmanDecoder(buffer)
+	hd.SetTree(&DefaultTree)
+	expectedMessage := []byte("aab")
+	out := make([]byte, len(expectedMessage))
+	n, err := hd.Read(out)
+	if err != nil && err != io.EOF {
+		t.Fatalf("unexpected error %v", err)
+	}
+	if n != len(expectedMessage) {
+		t.Fatalf("expected n = %v, got %v", len(expectedMessage), n)
+	}
+	if !slices.Equal(out[:n], expectedMessage) {
+		t.Errorf("expected %v, got %v", expectedMessage, out[:n])
+	}
+
+	code = []byte{0b10101100, 0, 0, 0, 0, 0, 0, 0, 0b11111000}
+	buffer = bytes.NewBuffer(code)
+	hd = NewHuffmanDecoder(buffer)
+	hd.SetTree(&DefaultTree)
+	expectedMessage = []byte("aabcb")
+	out = make([]byte, len(expectedMessage))
+	n, err = hd.Read(out)
+	if err != nil && err != io.EOF {
+		t.Fatalf("unexpected error %v", err)
+	}
+	if n != len(expectedMessage) {
+		t.Fatalf("expected n = %v, got %v", len(expectedMessage), n)
+	}
+	if !slices.Equal(out[:n], expectedMessage) {
+		t.Errorf("expected %v, got %v", expectedMessage, out[:n])
 	}
 }
 
