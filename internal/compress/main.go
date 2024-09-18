@@ -53,9 +53,8 @@ func (e errInvalidCode) Error() string {
 }
 
 var (
-	errIncompleteCode = errors.New("incomplete Huffman code")
-	errEmptyTree      = errors.New("tree has no root")
-	errEmptyNode      = errors.New("node has no children")
+	errEmptyTree = errors.New("tree has no root")
+	errEmptyNode = errors.New("node has no children")
 )
 
 type huffmanTree struct {
@@ -66,26 +65,27 @@ func newHuffmanTree(root *huffmanNode) huffmanTree {
 	return huffmanTree{root: root}
 }
 
-func (t huffmanTree) decode(code uint64, out []byte) (written int, used int, err error) {
+func (t huffmanTree) decode(code uint64, out []byte) (written int, err error) {
 	node := t.root
 	if node == nil {
-		return 0, 0, errEmptyTree
+		return 0, errEmptyTree
 	}
 
 	var mask uint64 = 1 << (codeBufferBits - 1)
 
 	if (code & mask) == 0 {
-		return 0, 0, errInvalidCode{code}
+		return 0, errInvalidCode{code}
 	}
 
 	// Skip the first 1 bit
 	mask >>= 1
-	used++
+	readBits := 1
 
 	var bit int8
 	for {
-		if used == codeBufferBits {
-			return written, used, errIncompleteCode
+		// Reached the end and we don't have a symbol
+		if readBits == codeBufferBits {
+			return written, errInvalidCode{code}
 		}
 
 		if (code & mask) == 0 {
@@ -97,33 +97,33 @@ func (t huffmanTree) decode(code uint64, out []byte) (written int, used int, err
 
 		node, err = node.child(movement)
 		if err != nil {
-			return written, used, err
+			return written, err
 		}
 		mask >>= 1
-		used++
+		readBits++
 
 		if node.isLeaf() {
 			out[written] = node.symbol
 			written++
 			node = t.root
-			if used == codeBufferBits {
+			if readBits == codeBufferBits {
 				break
 			}
 			// check for padding
 			if (code & mask) == 0 {
 				// if the rest of the code is 0, we are done
 				if code&(mask-1) == 0 {
-					return written, codeBufferBits, nil
+					return written, nil
 				}
-				return written, used, errInvalidCode{code}
+				return written, errInvalidCode{code}
 			} else {
 				// skip 1 of next code point
-				used++
+				readBits++
 				mask >>= 1
 			}
 		}
 	}
-	return written, used, nil
+	return written, nil
 }
 
 // huffmanNode represents a node in a Huffman tree
