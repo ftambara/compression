@@ -138,36 +138,26 @@ func Test_decodeHuffmanEmpty(t *testing.T) {
 }
 
 func Test_decodeHuffman(t *testing.T) {
-	tree := newHuffmanTree(
-		newHuffmanInternalNode(
-			newHuffmanLeaf('a'),
-			newHuffmanInternalNode(
-				newHuffmanLeaf('b'),
-				newHuffmanLeaf('c'),
-			),
-		),
-	)
-
 	code := alignToLeft(0b10)
-	assertHuffmanDecoding(t, tree, code, nil, []byte{'a'})
+	assertHuffmanDecoding(t, DefaultTree, code, nil, []byte{'a'})
 
 	code = alignToLeft(0b110)
-	assertHuffmanDecoding(t, tree, code, nil, []byte{'b'})
+	assertHuffmanDecoding(t, DefaultTree, code, nil, []byte{'b'})
 
 	code = alignToLeft(0b10111)
-	assertHuffmanDecoding(t, tree, code, nil, []byte{'a', 'c'})
+	assertHuffmanDecoding(t, DefaultTree, code, nil, []byte{'a', 'c'})
 
 	// Padding
 	code = alignToLeft(0b100)
-	assertHuffmanDecoding(t, tree, code, nil, []byte{'a'})
+	assertHuffmanDecoding(t, DefaultTree, code, nil, []byte{'a'})
 
 	// Errors
 	code = 0b010
-	assertHuffmanDecoding(t, tree, code, errInvalidCode{code}, nil)
+	assertHuffmanDecoding(t, DefaultTree, code, errInvalidCode{code}, nil)
 
 	code = 0xffffffffffffffff
-	assertHuffmanDecoding(t, tree, code, errInvalidCode{code}, []byte("ccccccccccccccccccccc"))
+	assertHuffmanDecoding(t, DefaultTree, code, errInvalidCode{code}, []byte("ccccccccccccccccccccc"))
 
 	code = alignToLeft(0b01) >> 1
-	assertHuffmanDecoding(t, tree, code, errInvalidCode{code}, nil)
+	assertHuffmanDecoding(t, DefaultTree, code, errInvalidCode{code}, nil)
 }
