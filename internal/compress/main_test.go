@@ -68,6 +68,18 @@ func Test_newHuffmanTree(t *testing.T) {
 	if !maps.Equal(expectedLeaves, tree.leaves) {
 		t.Fatalf("expected %v, got %v", expectedLeaves, tree.leaves)
 	}
+	expectedCode := huffmanCode{codepoint: 0b10, length: 2}
+	if aLeaf.code != expectedCode {
+		t.Errorf("expected %v, got %v", expectedCode, aLeaf.code)
+	}
+	expectedCode = huffmanCode{codepoint: 0b110, length: 3}
+	if bLeaf.code != expectedCode {
+		t.Errorf("expected %v, got %v", expectedCode, bLeaf.code)
+	}
+	expectedCode = huffmanCode{codepoint: 0b111, length: 3}
+	if cLeaf.code != expectedCode {
+		t.Errorf("expected %v, got %v", expectedCode, cLeaf.code)
+	}
 }
 
 func assertHuffmanDecoding(

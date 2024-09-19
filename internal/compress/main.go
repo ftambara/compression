@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"unicode"
 )
 
@@ -138,21 +139,39 @@ type huffmanTree struct {
 }
 
 func newHuffmanTree(root huffmanNode) huffmanTree {
+	type stackItem struct {
+		node      *huffmanNode
+		accumCode []byte
+	}
+
 	children := make(map[byte]*huffmanNode, 0)
-	nodeStack := []*huffmanNode{&root}
+	nodeStack := []stackItem{
+		{&root, []byte{1}}, // start accumCode with 1 because 0 is padding
+	}
 	for len(nodeStack) != 0 {
-		node := nodeStack[len(nodeStack)-1]
+		item := nodeStack[len(nodeStack)-1]
 		nodeStack = nodeStack[:len(nodeStack)-1]
 
+		node := item.node
 		if node.isLeaf() {
 			children[node.symbol] = node
+			var codepoint byte
+			for _, b := range item.accumCode {
+				codepoint = (codepoint << 1) + b
+			}
+			node.code = huffmanCode{codepoint: codepoint, length: len(item.accumCode)}
 			continue
 		}
 		if node.left != nil {
-			nodeStack = append(nodeStack, node.left)
+			nodeStack = append(
+				nodeStack,
+				stackItem{node.left, append(slices.Clone(item.accumCode), 0)},
+			)
 		}
 		if node.right != nil {
-			nodeStack = append(nodeStack, node.right)
+			// I don't need to clone accumcode again since this will be the only
+			// potential reference left to the original
+			nodeStack = append(nodeStack, stackItem{node.right, append(item.accumCode, 1)})
 		}
 	}
 	return huffmanTree{root: &root, leaves: children}
@@ -219,12 +238,49 @@ func (t huffmanTree) decode(code uint64, out []byte) (written int, err error) {
 	return written, nil
 }
 
+const codepointMaxLength = 8
+
+type huffmanCode struct {
+	codepoint byte // TODO: This should be uint16
+	length    int
+}
+
+func packCodes(codes []huffmanCode) []byte {
+	result := make([]byte, 0)
+	var currentCode byte
+	spaceLeft := 0
+	for _, code := range codes {
+		if code.length >= spaceLeft {
+			currentCode += code.codepoint >> byte(code.length-spaceLeft)
+			result = append(result, currentCode)
+			currentCode = 0
+			spaceLeft = codepointMaxLength
+		} else {
+			currentCode += code.codepoint << byte(spaceLeft-code.length)
+			spaceLeft -= code.length
+		}
+	}
+	if currentCode != 0 {
+		result = append(result, currentCode)
+	}
+	return result
+}
+
+func (t huffmanTree) symbolCode(symbol byte) (huffmanCode, error) {
+	leaf, ok := t.leaves[symbol]
+	if !ok {
+		return huffmanCode{}, fmt.Errorf("symbol 0x%x not present in tree", symbol)
+	}
+	return leaf.code, nil
+}
+
 // huffmanNode represents a node in a Huffman tree
 // Do not use this struct directly. Use newHuffmanInternalNode and newHuffmanLeaf instead,
 // as they ensure that the struct is correctly initialized.
 type huffmanNode struct {
 	left, right *huffmanNode
 	symbol      byte
+	code        huffmanCode
 }
 
 func newHuffmanInternalNode(left, right *huffmanNode) *huffmanNode {
