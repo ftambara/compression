@@ -141,12 +141,12 @@ type huffmanTree struct {
 func newHuffmanTree(root huffmanNode) huffmanTree {
 	type stackItem struct {
 		node      *huffmanNode
-		accumCode []byte
+		accumCode []codepoint
 	}
 
 	children := make(map[byte]*huffmanNode, 0)
 	nodeStack := []stackItem{
-		{&root, []byte{1}}, // start accumCode with 1 because 0 is padding
+		{&root, []codepoint{1}}, // start accumCode with 1 because 0 is padding
 	}
 	for len(nodeStack) != 0 {
 		item := nodeStack[len(nodeStack)-1]
@@ -155,11 +155,11 @@ func newHuffmanTree(root huffmanNode) huffmanTree {
 		node := item.node
 		if node.isLeaf() {
 			children[node.symbol] = node
-			var codepoint byte
+			var codept codepoint
 			for _, b := range item.accumCode {
-				codepoint = (codepoint << 1) + b
+				codept = (codept << 1) + b
 			}
-			node.code = huffmanCode{codepoint: codepoint, length: len(item.accumCode)}
+			node.code = huffmanCode{codepoint: codept, length: len(item.accumCode)}
 			continue
 		}
 		if node.left != nil {
@@ -240,28 +240,32 @@ func (t huffmanTree) decode(code uint64, out []byte) (written int, err error) {
 
 const codepointMaxLength = 8
 
+type codepoint byte // TODO: This should be uint16
+
 type huffmanCode struct {
-	codepoint byte // TODO: This should be uint16
+	codepoint codepoint
 	length    int
 }
 
+// packCodes turns a slice of codes into a slice of bytes, properly packed
+// to save space. The last code is aligned to the left and padded.
 func packCodes(codes []huffmanCode) []byte {
 	result := make([]byte, 0)
-	var currentCode byte
-	spaceLeft := 0
+	var currentCode codepoint
+	spaceLeft := codepointMaxLength
 	for _, code := range codes {
 		if code.length >= spaceLeft {
-			currentCode += code.codepoint >> byte(code.length-spaceLeft)
-			result = append(result, currentCode)
+			currentCode += code.codepoint >> codepoint(code.length-spaceLeft)
+			result = append(result, byte(currentCode))
 			currentCode = 0
 			spaceLeft = codepointMaxLength
 		} else {
-			currentCode += code.codepoint << byte(spaceLeft-code.length)
+			currentCode += code.codepoint << codepoint(spaceLeft-code.length)
 			spaceLeft -= code.length
 		}
 	}
 	if currentCode != 0 {
-		result = append(result, currentCode)
+		result = append(result, byte(currentCode))
 	}
 	return result
 }
