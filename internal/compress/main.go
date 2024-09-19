@@ -85,9 +85,61 @@ func (hd *HuffmanDecoder) Read(buffer []byte) (int, error) {
 	return totalN, nil
 }
 
+type HuffmanEncoder struct {
+	rd   io.Reader
+	tree *huffmanTree
+}
+
 type symbolCount struct {
 	symbol byte
 	count  int
+}
+
+func NewHuffmanEncoder(rd io.Reader) *HuffmanEncoder {
+	return &HuffmanEncoder{
+		rd:   rd,
+		tree: nil,
+	}
+}
+
+func (he *HuffmanEncoder) SetTree(t *huffmanTree) {
+	he.tree = t
+}
+
+// Read reads a message from the encoder's reader (the one passed to the constructor
+// and writes resulting encoded bytes to buffer
+func (he *HuffmanEncoder) Read(buffer []byte) (int, error) {
+	if he.tree == nil {
+		return 0, errors.New("on-the-fly tree generation not implemented yet")
+	}
+
+	readbuff := make([]byte, encoderBufferLen)
+	codes := make([]huffmanCode, 0, encoderBufferLen)
+	totalN := 0
+
+	for {
+		n, err := he.rd.Read(readbuff)
+		if err != nil && err != io.EOF {
+			return totalN, err
+		}
+
+		for _, symbol := range readbuff[:n] {
+			code, err := he.tree.symbolCode(symbol)
+			if err != nil {
+				return totalN, err
+			}
+			codes = append(codes, code)
+		}
+		packed := packCodes(codes)
+		copy(buffer[totalN:], packed)
+		totalN += len(packed)
+		codes = codes[:0] // clear codes without freeing memory
+
+		if err == io.EOF {
+			break
+		}
+	}
+	return totalN, nil
 }
 
 func (s symbolCount) String() string {

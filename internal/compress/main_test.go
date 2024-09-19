@@ -190,3 +190,32 @@ func Test_decodeHuffman(t *testing.T) {
 	code = alignToLeft(0b01) >> 1
 	assertHuffmanDecoding(t, DefaultTree, code, errInvalidCode{code}, nil)
 }
+
+func assertHuffmanEncoding(
+	t *testing.T,
+	tree huffmanTree,
+	message []byte,
+	expectedCode []byte,
+) {
+	t.Helper()
+	buffer := bytes.NewBuffer(message)
+	he := NewHuffmanEncoder(buffer)
+	he.SetTree(&tree)
+	out := make([]byte, len(expectedCode))
+	n, err := he.Read(out)
+	if err != nil && err != io.EOF {
+		t.Fatalf("unexpected error %v", err)
+	}
+	if n != len(expectedCode) {
+		t.Fatalf("expected n = %v, got %v", len(expectedCode), n)
+	}
+	if !slices.Equal(out[:n], expectedCode) {
+		t.Errorf("expected %v, got %v", expectedCode, out[:n])
+	}
+}
+
+func TestHuffmanEncoder(t *testing.T) {
+	assertHuffmanEncoding(t, DefaultTree, []byte("cab"), []byte{0b11110110})
+	assertHuffmanEncoding(t, DefaultTree, []byte("abbac"), []byte{0b10110110, 0b10111000})
+	assertHuffmanEncoding(t, DefaultTree, []byte{}, []byte{})
+}
