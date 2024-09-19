@@ -3,6 +3,7 @@ package compress
 import (
 	"bytes"
 	"io"
+	"maps"
 	"slices"
 	"testing"
 )
@@ -50,6 +51,25 @@ func Test_symbolCounts(t *testing.T) {
 	assertSliceEqualSort(t, cmp, expected, counts)
 }
 
+func Test_newHuffmanTree(t *testing.T) {
+	aLeaf := newHuffmanLeaf('a')
+	bLeaf := newHuffmanLeaf('b')
+	cLeaf := newHuffmanLeaf('c')
+
+	root := newHuffmanInternalNode(
+		aLeaf,
+		newHuffmanInternalNode(bLeaf, cLeaf),
+	)
+	tree := newHuffmanTree(*root)
+	expectedLeaves := make(map[byte]*huffmanNode, 3)
+	expectedLeaves['a'] = aLeaf
+	expectedLeaves['b'] = bLeaf
+	expectedLeaves['c'] = cLeaf
+	if !maps.Equal(expectedLeaves, tree.leaves) {
+		t.Fatalf("expected %v, got %v", expectedLeaves, tree.leaves)
+	}
+}
+
 func assertHuffmanDecoding(
 	t *testing.T,
 	tree huffmanTree,
@@ -69,7 +89,7 @@ func assertHuffmanDecoding(
 }
 
 var DefaultTree = newHuffmanTree(
-	newHuffmanInternalNode(
+	*newHuffmanInternalNode(
 		newHuffmanLeaf('a'),
 		newHuffmanInternalNode(
 			newHuffmanLeaf('b'),
@@ -78,7 +98,7 @@ var DefaultTree = newHuffmanTree(
 	),
 )
 
-func TestHuffmanReader(t *testing.T) {
+func TestHuffmanDecoder(t *testing.T) {
 	code := []byte{0b10101100}
 	buffer := bytes.NewBuffer(code)
 	hd := NewHuffmanDecoder(buffer)
@@ -126,14 +146,11 @@ func alignToLeft(n uint64) uint64 {
 }
 
 func Test_decodeHuffmanEmpty(t *testing.T) {
-	tree := newHuffmanTree(nil)
+	tree := huffmanTree{}
 	var code uint64
 	assertHuffmanDecoding(t, tree, code, errEmptyTree, nil)
 
-	tree = huffmanTree{}
-	assertHuffmanDecoding(t, tree, code, errEmptyTree, nil)
-
-	tree = newHuffmanTree(newHuffmanInternalNode(nil, nil))
+	tree = newHuffmanTree(*newHuffmanInternalNode(nil, nil))
 	assertHuffmanDecoding(t, tree, code, errInvalidCode{code}, nil)
 }
 

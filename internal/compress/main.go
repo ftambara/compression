@@ -133,11 +133,29 @@ var (
 )
 
 type huffmanTree struct {
-	root *huffmanNode
+	root   *huffmanNode
+	leaves map[byte]*huffmanNode
 }
 
-func newHuffmanTree(root *huffmanNode) huffmanTree {
-	return huffmanTree{root: root}
+func newHuffmanTree(root huffmanNode) huffmanTree {
+	children := make(map[byte]*huffmanNode, 0)
+	nodeStack := []*huffmanNode{&root}
+	for len(nodeStack) != 0 {
+		node := nodeStack[len(nodeStack)-1]
+		nodeStack = nodeStack[:len(nodeStack)-1]
+
+		if node.isLeaf() {
+			children[node.symbol] = node
+			continue
+		}
+		if node.left != nil {
+			nodeStack = append(nodeStack, node.left)
+		}
+		if node.right != nil {
+			nodeStack = append(nodeStack, node.right)
+		}
+	}
+	return huffmanTree{root: &root, leaves: children}
 }
 
 func (t huffmanTree) decode(code uint64, out []byte) (written int, err error) {
