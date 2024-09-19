@@ -160,10 +160,10 @@ func alignToLeft(n uint64) uint64 {
 func Test_decodeHuffmanEmpty(t *testing.T) {
 	tree := huffmanTree{}
 	var code uint64
-	assertHuffmanDecoding(t, tree, code, errEmptyTree, nil)
+	assertHuffmanDecoding(t, tree, code, ErrEmptyTree, nil)
 
 	tree = newHuffmanTree(*newHuffmanInternalNode(nil, nil))
-	assertHuffmanDecoding(t, tree, code, errInvalidCode{code}, nil)
+	assertHuffmanDecoding(t, tree, code, ErrInvalidCode{code}, nil)
 }
 
 func Test_decodeHuffman(t *testing.T) {
@@ -182,13 +182,13 @@ func Test_decodeHuffman(t *testing.T) {
 
 	// Errors
 	code = 0b010
-	assertHuffmanDecoding(t, DefaultTree, code, errInvalidCode{code}, nil)
+	assertHuffmanDecoding(t, DefaultTree, code, ErrInvalidCode{code}, nil)
 
 	code = 0xffffffffffffffff
-	assertHuffmanDecoding(t, DefaultTree, code, errInvalidCode{code}, []byte("ccccccccccccccccccccc"))
+	assertHuffmanDecoding(t, DefaultTree, code, ErrInvalidCode{code}, []byte("ccccccccccccccccccccc"))
 
 	code = alignToLeft(0b01) >> 1
-	assertHuffmanDecoding(t, DefaultTree, code, errInvalidCode{code}, nil)
+	assertHuffmanDecoding(t, DefaultTree, code, ErrInvalidCode{code}, nil)
 }
 
 func assertHuffmanEncoding(

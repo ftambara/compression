@@ -9,17 +9,20 @@ import (
 	"unicode"
 )
 
+const (
+	// codeBufferBits defines number of bits in code processing buffers
+	codeBufferBits = 64
+
+	// encoder/decoder buffers
+	decoderBufferLen = 8 * 1024
+	encoderBufferLen = 8 * 1024
+)
+
 type HuffmanDecoder struct {
 	rd      io.Reader
 	tree    *huffmanTree
 	pending []byte
 }
-
-const (
-	// codeBufferBits defines number of bits in code processing buffers
-	codeBufferBits   = 64
-	decoderBufferLen = 8 * 1024
-)
 
 func NewHuffmanDecoder(rd io.Reader) *HuffmanDecoder {
 	return &HuffmanDecoder{
@@ -33,6 +36,7 @@ func (hd *HuffmanDecoder) SetTree(t *huffmanTree) {
 	hd.tree = t
 }
 
+// Read reads packed codepoints from hd.rd and writes decoded symbols to buffer
 func (hd *HuffmanDecoder) Read(buffer []byte) (int, error) {
 	if hd.tree == nil {
 		return 0, errors.New("on-the-fly tree generation not implemented yet")
@@ -90,11 +94,6 @@ type HuffmanEncoder struct {
 	tree *huffmanTree
 }
 
-type symbolCount struct {
-	symbol byte
-	count  int
-}
-
 func NewHuffmanEncoder(rd io.Reader) *HuffmanEncoder {
 	return &HuffmanEncoder{
 		rd:   rd,
@@ -106,8 +105,7 @@ func (he *HuffmanEncoder) SetTree(t *huffmanTree) {
 	he.tree = t
 }
 
-// Read reads a message from the encoder's reader (the one passed to the constructor
-// and writes resulting encoded bytes to buffer
+// Read reads symbols from he.rd and writes resulting encoded bytes to buffer
 func (he *HuffmanEncoder) Read(buffer []byte) (int, error) {
 	if he.tree == nil {
 		return 0, errors.New("on-the-fly tree generation not implemented yet")
@@ -142,47 +140,17 @@ func (he *HuffmanEncoder) Read(buffer []byte) (int, error) {
 	return totalN, nil
 }
 
-func (s symbolCount) String() string {
-	if unicode.IsSpace(rune(s.symbol)) {
-		return fmt.Sprintf("<space>:%d", s.count)
-	}
-	return fmt.Sprintf("%c:%d", s.symbol, s.count)
-}
-
-func symbolCounts(symbols []byte) []symbolCount {
-	r := map[byte]int{}
-	total := 0
-	for _, sym := range symbols {
-		r[sym]++
-		total++
-	}
-	unique := make([]symbolCount, len(r))
-	i := 0
-	for sym, count := range r {
-		unique[i] = symbolCount{symbol: sym, count: count}
-		i++
-	}
-	return unique
-}
-
-type huffmanMovement int
-
-const (
-	left  huffmanMovement = 0
-	right huffmanMovement = 1
-)
-
-type errInvalidCode struct {
+type ErrInvalidCode struct {
 	code uint64
 }
 
-func (e errInvalidCode) Error() string {
+func (e ErrInvalidCode) Error() string {
 	return fmt.Sprintf("invalid code %x", e.code)
 }
 
 var (
-	errEmptyTree = errors.New("tree has no root")
-	errEmptyNode = errors.New("node has no children")
+	ErrEmptyTree = errors.New("tree has no root")
+	ErrEmptyNode = errors.New("node has no children")
 )
 
 type huffmanTree struct {
@@ -232,13 +200,13 @@ func newHuffmanTree(root huffmanNode) huffmanTree {
 func (t huffmanTree) decode(code uint64, out []byte) (written int, err error) {
 	node := t.root
 	if node == nil {
-		return 0, errEmptyTree
+		return 0, ErrEmptyTree
 	}
 
 	var mask uint64 = 1 << (codeBufferBits - 1)
 
 	if (code & mask) == 0 {
-		return 0, errInvalidCode{code}
+		return 0, ErrInvalidCode{code}
 	}
 
 	// Skip the first 1 bit
@@ -249,7 +217,7 @@ func (t huffmanTree) decode(code uint64, out []byte) (written int, err error) {
 	for {
 		// Reached the end and we don't have a symbol
 		if readBits == codeBufferBits {
-			return written, errInvalidCode{code}
+			return written, ErrInvalidCode{code}
 		}
 
 		if (code & mask) == 0 {
@@ -279,7 +247,7 @@ func (t huffmanTree) decode(code uint64, out []byte) (written int, err error) {
 				if code&(mask-1) == 0 {
 					return written, nil
 				}
-				return written, errInvalidCode{code}
+				return written, ErrInvalidCode{code}
 			} else {
 				// skip 1 of next code point
 				readBits++
@@ -330,6 +298,13 @@ func (t huffmanTree) symbolCode(symbol byte) (huffmanCode, error) {
 	return leaf.code, nil
 }
 
+type huffmanMovement int
+
+const (
+	left  huffmanMovement = 0
+	right huffmanMovement = 1
+)
+
 // huffmanNode represents a node in a Huffman tree
 // Do not use this struct directly. Use newHuffmanInternalNode and newHuffmanLeaf instead,
 // as they ensure that the struct is correctly initialized.
@@ -362,7 +337,35 @@ func (n huffmanNode) child(movement huffmanMovement) (*huffmanNode, error) {
 		return nil, fmt.Errorf("invalid movement %v", movement)
 	}
 	if node == nil {
-		return nil, errEmptyNode
+		return nil, ErrEmptyNode
 	}
 	return node, nil
+}
+
+type symbolCount struct {
+	symbol byte
+	count  int
+}
+
+func (s symbolCount) String() string {
+	if unicode.IsSpace(rune(s.symbol)) {
+		return fmt.Sprintf("<space>:%d", s.count)
+	}
+	return fmt.Sprintf("%c:%d", s.symbol, s.count)
+}
+
+func symbolCounts(symbols []byte) []symbolCount {
+	r := map[byte]int{}
+	total := 0
+	for _, sym := range symbols {
+		r[sym]++
+		total++
+	}
+	unique := make([]symbolCount, len(r))
+	i := 0
+	for sym, count := range r {
+		unique[i] = symbolCount{symbol: sym, count: count}
+		i++
+	}
+	return unique
 }
