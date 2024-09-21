@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math/bits"
 	"slices"
 	"unicode"
@@ -18,6 +19,9 @@ const (
 	// encoder/decoder buffers
 	decoderBufferLen = 8 * 1024
 	encoderBufferLen = 8 * 1024
+
+	// max number of symbols in a huffman tree
+	maxSymbols = 10 * 1024
 )
 
 type HuffmanDecoder struct {
@@ -198,7 +202,21 @@ func newHuffmanTree(root huffmanNode) HuffmanTree {
 	return HuffmanTree{root: actualRoot, leaves: children}
 }
 
-func buildHuffmanTree(symbolFrequencies []symbolCount) (HuffmanTree, error) {
+func BuildHuffmanTree(input io.Reader) (HuffmanTree, error) {
+	symbols := make([]byte, maxSymbols)
+
+	n, err := input.Read(symbols)
+	if err != nil && err != io.EOF {
+		return HuffmanTree{}, err
+	}
+	if n == maxSymbols {
+		log.Printf("Warning: max number of symbols reached (%d), cropping input", maxSymbols)
+	}
+	freqs := symbolCounts(symbols[:n])
+	return buildHuffmanTreeFromCounts(freqs)
+}
+
+func buildHuffmanTreeFromCounts(symbolFrequencies []symbolCount) (HuffmanTree, error) {
 	if len(symbolFrequencies) == 0 {
 		return HuffmanTree{}, errors.New("empty symbolFrequencies")
 	}

@@ -83,18 +83,15 @@ func Test_newHuffmanTree(t *testing.T) {
 	}
 }
 
-func Test_buildHuffmanTree(t *testing.T) {
-	_, err := buildHuffmanTree([]symbolCount{})
+func TestBuildHuffmanTree(t *testing.T) {
+	input := bytes.NewBufferString("")
+	_, err := BuildHuffmanTree(input)
 	if err == nil {
 		t.Errorf("expected an error due to empty slice")
 	}
 
-	freqs := []symbolCount{
-		{symbol: 'A', count: 5},
-		{symbol: 'B', count: 2},
-		{symbol: 'C', count: 3},
-	}
-	tree, err := buildHuffmanTree(freqs)
+	input = bytes.NewBufferString("ABAC")
+	tree, err := BuildHuffmanTree(input)
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
