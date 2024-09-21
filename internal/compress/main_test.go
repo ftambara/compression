@@ -5,6 +5,7 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -161,6 +162,33 @@ func Test_buildHuffmanTree(t *testing.T) {
 			}
 		}
 		count++
+	}
+}
+
+func TestHuffmanTreeExportCSV(t *testing.T) {
+	buffer := &bytes.Buffer{}
+	DefaultTree.ExportCSV(buffer)
+
+	expectedLines := []string{
+		"symbol,code",
+		"a,10",
+		"b,110",
+		"c,111",
+	}
+	lines := strings.Split(buffer.String(), "\n")
+	if len(lines) != len(expectedLines)+1 { // +1 for the empty line at the end
+		t.Fatalf("expected %d lines, got %d", len(expectedLines), len(lines))
+	}
+	if expectedLines[0] != lines[0] {
+		t.Fatalf("expected %q, got %q", expectedLines[0], lines[0])
+	}
+	for _, expectedLine := range expectedLines[1:] {
+		if !slices.Contains(lines, expectedLine) {
+			t.Errorf("expected %q, got %v", expectedLine, lines)
+		}
+	}
+	if lines[len(lines)-1] != "" {
+		t.Errorf("expected an empty line at the end")
 	}
 }
 

@@ -222,6 +222,19 @@ func buildHuffmanTree(symbolFrequencies []symbolCount) (huffmanTree, error) {
 	return newHuffmanTree(*queue.Pop().Value), nil
 }
 
+func (t huffmanTree) ExportCSV(w io.Writer) error {
+	// Export the tree as symbol, code
+	_, err := w.Write([]byte("symbol,code\n"))
+	if err != nil {
+		return err
+	}
+	for symbol, leaf := range t.leaves {
+		code := leaf.code
+		fmt.Fprintf(w, "%c,%0*b\n", symbol, code.length, code.codepoint)
+	}
+	return nil
+}
+
 func (t huffmanTree) decode(codes []byte, out []byte) (used, written int, err error) {
 	node := t.root
 	if node == nil {
@@ -300,6 +313,10 @@ func (t huffmanTree) symbolCode(symbol byte) (huffmanCode, error) {
 const codepointMaxLength = 8
 
 type codepoint byte // TODO: This should be uint16
+
+func (c codepoint) toBytes() []byte {
+	return []byte{byte(c)}
+}
 
 type huffmanCode struct {
 	codepoint codepoint
