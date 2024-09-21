@@ -85,15 +85,23 @@ func Test_newHuffmanTree(t *testing.T) {
 func assertHuffmanDecoding(
 	t *testing.T,
 	tree huffmanTree,
-	code uint64,
+	codes []byte,
+	expectedWritten int,
+	expectedUsed int,
 	expectedErr error,
 	expectedDecoded []byte,
 ) {
 	t.Helper()
 	out := make([]byte, codeBufferBits)
-	written, err := tree.decode(code, out)
+	used, written, err := tree.decode(codes, out)
 	if err != expectedErr {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if used != expectedUsed {
+		t.Errorf("expected used = %v, got %v", expectedUsed, used)
+	}
+	if written != expectedWritten {
+		t.Errorf("expected written = %v, got %v", expectedWritten, written)
 	}
 	if !slices.Equal(out[:written], expectedDecoded) {
 		t.Errorf("expected %v, got %v", expectedDecoded, out[:written])
@@ -128,11 +136,11 @@ func TestHuffmanDecoder(t *testing.T) {
 		t.Errorf("expected %v, got %v", expectedMessage, out[:n])
 	}
 
-	code = []byte{0b10101100, 0, 0, 0, 0, 0, 0, 0, 0b11111000}
+	code = []byte{0b10101111, 0b10111000}
 	buffer = bytes.NewBuffer(code)
 	hd = NewHuffmanDecoder(buffer)
 	hd.SetTree(&DefaultTree)
-	expectedMessage = []byte("aabcb")
+	expectedMessage = []byte("aacbc")
 	out = make([]byte, len(expectedMessage))
 	n, err = hd.Read(out)
 	if err != nil && err != io.EOF {
@@ -159,36 +167,123 @@ func alignToLeft(n uint64) uint64 {
 
 func Test_decodeHuffmanEmpty(t *testing.T) {
 	tree := huffmanTree{}
-	var code uint64
-	assertHuffmanDecoding(t, tree, code, ErrEmptyTree, nil)
+	codes := []byte{}
+	assertHuffmanDecoding(t, tree, codes, 0, 0, ErrEmptyTree, nil)
 
 	tree = newHuffmanTree(*newHuffmanInternalNode(nil, nil))
-	assertHuffmanDecoding(t, tree, code, ErrInvalidCode{code}, nil)
+	assertHuffmanDecoding(t, tree, codes, 0, 0, nil, nil)
 }
 
 func Test_decodeHuffman(t *testing.T) {
-	code := alignToLeft(0b10)
-	assertHuffmanDecoding(t, DefaultTree, code, nil, []byte{'a'})
+	type testCase struct {
+		name            string
+		tree            *huffmanTree
+		codes           []byte
+		expectedWritten int
+		expectedUsed    int
+		expectedErr     error
+		expectedMessage []byte
+	}
+	table := []testCase{
+		{
+			name:            "normal case 1",
+			codes:           []byte{0b10},
+			expectedUsed:    1,
+			expectedWritten: 1,
+			expectedMessage: []byte{'a'},
+		},
+		{
+			name:            "normal case 2",
+			codes:           []byte{0b110},
+			expectedUsed:    1,
+			expectedWritten: 1,
+			expectedMessage: []byte{'b'},
+		},
+		{
+			name:            "normal case 3",
+			codes:           []byte{0b10111},
+			expectedUsed:    1,
+			expectedWritten: 2,
+			expectedMessage: []byte("ac"),
+		},
+		{
+			name:            "codes can span multiple bytes",
+			codes:           []byte{0b10111101, 0b01000000},
+			expectedUsed:    2,
+			expectedWritten: 5,
+			expectedMessage: []byte("acaaa"),
+		},
+		{
+			name:            "leading zeroes",
+			codes:           []byte{0b00010},
+			expectedUsed:    1,
+			expectedWritten: 1,
+			expectedMessage: []byte{'a'},
+		},
+		{
+			name:            "leading zeroes must be at the beginning of the first byte",
+			codes:           []byte{0b00000010, 0b00100000},
+			expectedUsed:    1,
+			expectedWritten: 1,
+			expectedErr:     ErrInvalidCode{0b00100000},
+			expectedMessage: []byte{'a'},
+		},
+		{
+			name:            "padding",
+			codes:           []byte{0b10000},
+			expectedUsed:    1,
+			expectedWritten: 1,
+			expectedMessage: []byte{'a'},
+		},
+		{
+			name:            "padding in the middle of the byte",
+			codes:           []byte{0b10000, 0b11100000},
+			expectedUsed:    0,
+			expectedWritten: 1,
+			expectedErr:     ErrInvalidPadding,
+			expectedMessage: []byte{'a'},
+		},
+		{
+			name:            "incomplete code",
+			codes:           []byte{0b11011111},
+			expectedUsed:    0,
+			expectedWritten: 2,
+			expectedMessage: []byte("bc"),
+		},
+		{
+			name:            "invalid code",
+			codes:           []byte{0b1001},
+			expectedUsed:    0,
+			expectedWritten: 1,
+			expectedErr:     ErrInvalidCode{0b1001},
+			expectedMessage: []byte{'a'},
+		},
+		{
+			name:            "zero bytes",
+			codes:           []byte{0b11011110, 0, 0b11100000},
+			expectedUsed:    1,
+			expectedWritten: 3,
+			expectedErr:     ErrInvalidCode{0},
+			expectedMessage: []byte("bca"),
+		},
+	}
 
-	code = alignToLeft(0b110)
-	assertHuffmanDecoding(t, DefaultTree, code, nil, []byte{'b'})
-
-	code = alignToLeft(0b10111)
-	assertHuffmanDecoding(t, DefaultTree, code, nil, []byte{'a', 'c'})
-
-	// Padding
-	code = alignToLeft(0b100)
-	assertHuffmanDecoding(t, DefaultTree, code, nil, []byte{'a'})
-
-	// Errors
-	code = 0b010
-	assertHuffmanDecoding(t, DefaultTree, code, ErrInvalidCode{code}, nil)
-
-	code = 0xffffffffffffffff
-	assertHuffmanDecoding(t, DefaultTree, code, ErrInvalidCode{code}, []byte("ccccccccccccccccccccc"))
-
-	code = alignToLeft(0b01) >> 1
-	assertHuffmanDecoding(t, DefaultTree, code, ErrInvalidCode{code}, nil)
+	for _, tc := range table {
+		if tc.tree == nil {
+			tc.tree = &DefaultTree
+		}
+		t.Run(tc.name, func(t *testing.T) {
+			assertHuffmanDecoding(
+				t,
+				*tc.tree,
+				tc.codes,
+				tc.expectedWritten,
+				tc.expectedUsed,
+				tc.expectedErr,
+				tc.expectedMessage,
+			)
+		})
+	}
 }
 
 func assertHuffmanEncoding(

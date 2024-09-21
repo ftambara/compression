@@ -1,10 +1,10 @@
 package compress
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"math/bits"
 	"slices"
 	"unicode"
 )
@@ -46,44 +46,33 @@ func (hd *HuffmanDecoder) Read(buffer []byte) (int, error) {
 	}
 
 	readbuff := make([]byte, decoderBufferLen)
+	readbuffStart := 0
 	totalN := 0
 
-	var code uint64
 	for {
-		n, err := hd.rd.Read(readbuff)
+		n, err := hd.rd.Read(readbuff[readbuffStart:])
 		if err != nil && err != io.EOF {
 			return totalN, err
 		}
+		n += readbuffStart
 
-		// Convert read bytes to code/s
-		for i := 0; i < n; i += 8 {
-			var fromBuf []byte
-			if i+8 > n {
-				// Would get an error, write to zero'd buffer
-				fromBuf = make([]byte, 8)
-				copy(fromBuf, readbuff[i:n])
-			} else {
-				fromBuf = readbuff[i : i+8]
-			}
-			code = binary.BigEndian.Uint64(fromBuf)
-
-			// Decode
-			written, err := hd.tree.decode(code, buffer[totalN:])
-
-			if written+totalN > len(buffer) {
-				// No more space left in output buffer
-				copy(hd.pending[:n-i], fromBuf)
-				return totalN, nil
-			}
-
-			totalN += written
-			if err != nil {
-				return totalN, err
-			}
+		// Decode
+		used, written, err := hd.tree.decode(readbuff[:n], buffer[totalN:])
+		totalN += written
+		if totalN == len(buffer) {
+			// No more space left in output buffer, save pending
+			hd.pending = readbuff[used:]
+			break
 		}
-
+		if err != nil {
+			return totalN, err
+		}
 		if err == io.EOF {
 			break
+		}
+		if used < n {
+			copy(readbuff, readbuff[used:n])
+			readbuffStart = n - used
 		}
 	}
 	return totalN, nil
@@ -141,16 +130,24 @@ func (he *HuffmanEncoder) Read(buffer []byte) (int, error) {
 }
 
 type ErrInvalidCode struct {
-	code uint64
+	code byte
 }
 
 func (e ErrInvalidCode) Error() string {
 	return fmt.Sprintf("invalid code %x", e.code)
 }
 
+type ErrNoChild struct {
+	movement huffmanMovement
+}
+
+func (e ErrNoChild) Error() string {
+	return fmt.Sprintf("node has no child at side %v", e.movement)
+}
+
 var (
-	ErrEmptyTree = errors.New("tree has no root")
-	ErrEmptyNode = errors.New("node has no children")
+	ErrEmptyTree      = errors.New("tree has no root")
+	ErrInvalidPadding = errors.New("invalid padding")
 )
 
 type huffmanTree struct {
@@ -164,10 +161,12 @@ func newHuffmanTree(root huffmanNode) huffmanTree {
 		accumCode []codepoint
 	}
 
+	// New trees have a "hidden" root that makes all valid codes start with 1
+	actualRoot := newHuffmanInternalNode(nil, &root)
+
 	children := make(map[byte]*huffmanNode, 0)
-	nodeStack := []stackItem{
-		{&root, []codepoint{1}}, // start accumCode with 1 because 0 is padding
-	}
+	nodeStack := []stackItem{{actualRoot, []codepoint{}}}
+
 	for len(nodeStack) != 0 {
 		item := nodeStack[len(nodeStack)-1]
 		nodeStack = nodeStack[:len(nodeStack)-1]
@@ -194,68 +193,74 @@ func newHuffmanTree(root huffmanNode) huffmanTree {
 			nodeStack = append(nodeStack, stackItem{node.right, append(item.accumCode, 1)})
 		}
 	}
-	return huffmanTree{root: &root, leaves: children}
+	return huffmanTree{root: actualRoot, leaves: children}
 }
 
-func (t huffmanTree) decode(code uint64, out []byte) (written int, err error) {
+func (t huffmanTree) decode(codes []byte, out []byte) (used, written int, err error) {
 	node := t.root
 	if node == nil {
-		return 0, ErrEmptyTree
+		return 0, 0, ErrEmptyTree
+	}
+	if len(codes) == 0 {
+		return 0, 0, nil
 	}
 
-	var mask uint64 = 1 << (codeBufferBits - 1)
+	// Skip leading zeros
+	bitN := bits.LeadingZeros8(codes[0])
 
-	if (code & mask) == 0 {
-		return 0, ErrInvalidCode{code}
+	if (codes[0] & (1 << (8 - bitN - 1))) == 0 {
+		return 1, 0, ErrInvalidCode{0}
 	}
 
-	// Skip the first 1 bit
-	mask >>= 1
-	readBits := 1
-
-	var bit int8
-	for {
-		// Reached the end and we don't have a symbol
-		if readBits == codeBufferBits {
-			return written, ErrInvalidCode{code}
-		}
-
-		if (code & mask) == 0 {
-			bit = 0
-		} else {
-			bit = 1
-		}
-		movement := huffmanMovement(bit)
-
-		node, err = node.child(movement)
-		if err != nil {
-			return written, err
-		}
-		mask >>= 1
-		readBits++
-
-		if node.isLeaf() {
-			out[written] = node.symbol
-			written++
-			node = t.root
-			if readBits == codeBufferBits {
-				break
-			}
-			// check for padding
-			if (code & mask) == 0 {
-				// if the rest of the code is 0, we are done
-				if code&(mask-1) == 0 {
-					return written, nil
-				}
-				return written, ErrInvalidCode{code}
+	var bit uint8
+	for i, code := range codes {
+		for bitN %= 8; bitN < 8; bitN++ {
+			if (code & (1 << (8 - bitN - 1))) == 0 {
+				bit = 0
 			} else {
-				// skip 1 of next code point
-				readBits++
-				mask >>= 1
+				bit = 1
+			}
+			child, err := node.child(huffmanMovement(bit))
+			if err != nil {
+				if (err == ErrNoChild{huffmanMovement(bit)}) {
+					return used, written, ErrInvalidCode{code}
+				}
+				return used, written, err
+			}
+			node = child
+
+			if node.isLeaf() {
+				out[written] = node.symbol
+				written++
+				node = t.root
+
+				// if the rest of the byte is padding
+				if bitN < 8-1 && (code&((1<<(8-bitN-1))-1) == 0) {
+					if i == len(codes)-1 {
+						// valid padding, update and return
+						used = i + 1
+						return used, written, nil
+					}
+					// invalid padding
+					return used, written, ErrInvalidPadding
+				}
+				// only update used bytes when fully decoded
+				if bitN == 8-1 {
+					used = i + 1
+				} else {
+					used = i
+				}
+				// if output has no space left
+				if written == len(out) {
+					// clear used bits before returning
+					// TODO: don't mix input and output parameters
+					codes[i] = code & ((1 << (8 - bitN)) - 1)
+					return used, written, nil
+				}
 			}
 		}
 	}
-	return written, nil
+	return used, written, nil
 }
 
 const codepointMaxLength = 8
@@ -337,7 +342,7 @@ func (n huffmanNode) child(movement huffmanMovement) (*huffmanNode, error) {
 		return nil, fmt.Errorf("invalid movement %v", movement)
 	}
 	if node == nil {
-		return nil, ErrEmptyNode
+		return nil, ErrNoChild{movement}
 	}
 	return node, nil
 }
