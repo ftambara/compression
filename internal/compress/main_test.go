@@ -5,7 +5,6 @@ import (
 	"io"
 	"maps"
 	"slices"
-	"strings"
 	"testing"
 )
 
@@ -83,6 +82,66 @@ func Test_newHuffmanTree(t *testing.T) {
 	}
 }
 
+func assertHuffmanTreeEqual(t *testing.T, expected, actual HuffmanTree) {
+	t.Helper()
+
+	// compare leaves
+	for symbol, expectedLeaf := range expected.leaves {
+		actualLeaf, ok := actual.leaves[symbol]
+		if !ok {
+			t.Errorf("expected leaf for symbol %v, got nil", symbol)
+		}
+		if expectedLeaf.symbol != actualLeaf.symbol {
+			t.Errorf("expected symbol %v, got %v", expectedLeaf.symbol, actualLeaf.symbol)
+		}
+		if expectedLeaf.code != actualLeaf.code {
+			t.Errorf("expected code %v, got %v", expectedLeaf.code, actualLeaf.code)
+		}
+	}
+
+	expectedStack := []*huffmanNode{expected.root}
+	actualStack := []*huffmanNode{actual.root}
+	count := 0
+	for len(actualStack) != 0 {
+		expectedItem := expectedStack[len(expectedStack)-1]
+		expectedStack = expectedStack[:len(expectedStack)-1]
+
+		actualItem := actualStack[len(actualStack)-1]
+		actualStack = actualStack[:len(actualStack)-1]
+
+		if expectedItem.isLeaf() {
+			if !actualItem.isLeaf() {
+				t.Fatalf("#%d: expected leaf, got internal node", count)
+			}
+			if expectedItem.symbol != actualItem.symbol {
+				t.Fatalf("#%d: expected symbol %v, got %v", count, expectedItem.symbol, actualItem.symbol)
+			}
+			if expectedItem.code != actualItem.code {
+				t.Fatalf("#%d: expected code %v, got %v", count, expectedItem.code, actualItem.code)
+			}
+		} else {
+			if actualItem.isLeaf() {
+				t.Fatalf("#%d: expected internal node, got leaf", count)
+			}
+			if expectedItem.left != nil {
+				if actualItem.left == nil {
+					t.Fatalf("#%d: expected left node, got nil", count)
+				}
+				expectedStack = append(expectedStack, expectedItem.left)
+				actualStack = append(actualStack, actualItem.left)
+			}
+			if expectedItem.right != nil {
+				if actualItem.right == nil {
+					t.Fatalf("#%d: expected right node, got nil", count)
+				}
+				expectedStack = append(expectedStack, expectedItem.right)
+				actualStack = append(actualStack, actualItem.right)
+			}
+		}
+		count++
+	}
+}
+
 func TestBuildHuffmanTree(t *testing.T) {
 	input := bytes.NewBufferString("")
 	_, err := BuildHuffmanTree(input)
@@ -104,89 +163,7 @@ func TestBuildHuffmanTree(t *testing.T) {
 			),
 		),
 	)
-
-	// compare leaves
-	for symbol, expectedLeaf := range expectedTree.leaves {
-		actualLeaf, ok := tree.leaves[symbol]
-		if !ok {
-			t.Errorf("expected leaf for symbol %v, got nil", symbol)
-		}
-		if expectedLeaf.symbol != actualLeaf.symbol {
-			t.Errorf("expected symbol %v, got %v", expectedLeaf.symbol, actualLeaf.symbol)
-		}
-		if expectedLeaf.code != actualLeaf.code {
-			t.Errorf("expected code %v, got %v", expectedLeaf.code, actualLeaf.code)
-		}
-	}
-
-	expectedStack := []*huffmanNode{expectedTree.root}
-	actualStack := []*huffmanNode{tree.root}
-	count := 0
-	for len(actualStack) != 0 {
-		expectedItem := expectedStack[len(expectedStack)-1]
-		expectedStack = expectedStack[:len(expectedStack)-1]
-
-		actualItem := actualStack[len(actualStack)-1]
-		actualStack = actualStack[:len(actualStack)-1]
-
-		if expectedItem.isLeaf() {
-			if !actualItem.isLeaf() {
-				t.Errorf("#%d: expected leaf, got internal node", count)
-			}
-			if expectedItem.symbol != actualItem.symbol {
-				t.Errorf("#%d: expected symbol %v, got %v", count, expectedItem.symbol, actualItem.symbol)
-			}
-			if expectedItem.code != actualItem.code {
-				t.Errorf("#%d: expected code %v, got %v", count, expectedItem.code, actualItem.code)
-			}
-		} else {
-			if actualItem.isLeaf() {
-				t.Errorf("#%d: expected internal node, got leaf", count)
-			}
-			if expectedItem.left != nil {
-				if actualItem.left == nil {
-					t.Errorf("#%d: expected left node, got nil", count)
-				}
-				expectedStack = append(expectedStack, expectedItem.left)
-				actualStack = append(actualStack, actualItem.left)
-			}
-			if expectedItem.right != nil {
-				if actualItem.right == nil {
-					t.Errorf("#%d: expected right node, got nil", count)
-				}
-				expectedStack = append(expectedStack, expectedItem.right)
-				actualStack = append(actualStack, actualItem.right)
-			}
-		}
-		count++
-	}
-}
-
-func TestHuffmanTreeExportCSV(t *testing.T) {
-	buffer := &bytes.Buffer{}
-	DefaultTree.ExportCSV(buffer)
-
-	expectedLines := []string{
-		"symbol,code",
-		"a,10",
-		"b,110",
-		"c,111",
-	}
-	lines := strings.Split(buffer.String(), "\n")
-	if len(lines) != len(expectedLines)+1 { // +1 for the empty line at the end
-		t.Fatalf("expected %d lines, got %d", len(expectedLines), len(lines))
-	}
-	if expectedLines[0] != lines[0] {
-		t.Fatalf("expected %q, got %q", expectedLines[0], lines[0])
-	}
-	for _, expectedLine := range expectedLines[1:] {
-		if !slices.Contains(lines, expectedLine) {
-			t.Errorf("expected %q, got %v", expectedLine, lines)
-		}
-	}
-	if lines[len(lines)-1] != "" {
-		t.Errorf("expected an empty line at the end")
-	}
+	assertHuffmanTreeEqual(t, expectedTree, tree)
 }
 
 func assertHuffmanDecoding(
@@ -458,4 +435,24 @@ func TestHuffmanEncodeDecode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExportHuffmanTreeJSON(t *testing.T) {
+	buffer := &bytes.Buffer{}
+	DefaultTree.ExportJSON(buffer)
+
+	expected := `{"left":{"symbol":97,"code":{"Codepoint":2,"Length":2}},"right":{"left":{"symbol":98,"code":{"Codepoint":6,"Length":3}},"right":{"symbol":99,"code":{"Codepoint":7,"Length":3}}}}`
+	if buffer.String() != expected+"\n" {
+		t.Errorf("expected \n\t%v\ngot \n\t%v", expected, buffer.String())
+	}
+}
+
+func TestImportHuffmanTreeJSON(t *testing.T) {
+	exportedTree := `{"left":{"symbol":97,"code":{"Codepoint":2,"Length":2}},"right":{"left":{"symbol":98,"code":{"Codepoint":6,"Length":3}},"right":{"symbol":99,"code":{"Codepoint":7,"Length":3}}}}`
+	tree, err := ImportHuffmanTreeJSON(bytes.NewBufferString(exportedTree))
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+
+	assertHuffmanTreeEqual(t, DefaultTree, tree)
 }

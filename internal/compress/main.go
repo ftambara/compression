@@ -1,6 +1,8 @@
 package compress
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -240,17 +242,33 @@ func buildHuffmanTreeFromCounts(symbolFrequencies []symbolCount) (HuffmanTree, e
 	return newHuffmanTree(*queue.Pop().Value), nil
 }
 
-func (t HuffmanTree) ExportCSV(w io.Writer) error {
-	// Export the tree as symbol, code
-	_, err := w.Write([]byte("symbol,code\n"))
+func (t HuffmanTree) MarshalJSON() ([]byte, error) {
+	// discard the hidden root
+	trueRoot := t.root.right
+	return json.Marshal(trueRoot)
+}
+
+func (t *HuffmanTree) UnmarshalJSON(data []byte) error {
+	root := huffmanNode{}
+	err := json.Unmarshal(data, &root)
 	if err != nil {
 		return err
 	}
-	for symbol, leaf := range t.leaves {
-		code := leaf.code
-		fmt.Fprintf(w, "%c,%0*b\n", symbol, code.Length, code.Codepoint)
-	}
+	*t = newHuffmanTree(root)
 	return nil
+}
+
+func (t HuffmanTree) ExportJSON(w io.Writer) error {
+	encoder := json.NewEncoder(w)
+	err := encoder.Encode(t)
+	return err
+}
+
+func ImportHuffmanTreeJSON(r io.Reader) (HuffmanTree, error) {
+	decoder := json.NewDecoder(r)
+	t := HuffmanTree{}
+	err := decoder.Decode(&t)
+	return t, err
 }
 
 func (t HuffmanTree) decode(codes []byte, out []byte) (used, written int, err error) {
@@ -406,6 +424,61 @@ func (n huffmanNode) child(movement huffmanMovement) (*huffmanNode, error) {
 		return nil, ErrNoChild{movement}
 	}
 	return node, nil
+}
+
+func (n huffmanNode) MarshalJSON() ([]byte, error) {
+	if n.isLeaf() {
+		code, err := json.Marshal(n.code)
+		if err != nil {
+			return nil, err
+		}
+		return []byte(fmt.Sprintf(`{"symbol":%d,"code":%s}`, n.symbol, code)), nil
+	}
+	buffer := bytes.Buffer{}
+	buffer.Write([]byte{'{'})
+	if n.left != nil {
+		buffer.WriteString(`"left":`)
+		nested, err := json.Marshal(n.left)
+		if err != nil {
+			return nil, err
+		}
+		buffer.Write(nested)
+	}
+	if n.right != nil {
+		if n.left != nil {
+			buffer.Write([]byte{','})
+		}
+		buffer.WriteString(`"right":`)
+		nested, err := json.Marshal(n.right)
+		if err != nil {
+			return nil, err
+		}
+		buffer.Write(nested)
+	}
+	buffer.Write([]byte{'}'})
+	return buffer.Bytes(), nil
+}
+
+func (n *huffmanNode) UnmarshalJSON(data []byte) error {
+	var node struct {
+		Symbol byte
+		Code   huffmanCode
+		Left   *huffmanNode
+		Right  *huffmanNode
+	}
+	err := json.Unmarshal(data, &node)
+	if err != nil {
+		return err
+	}
+	if node.Left != nil {
+		n.left = node.Left
+	}
+	if node.Right != nil {
+		n.right = node.Right
+	}
+	n.symbol = node.Symbol
+	n.code = node.Code
+	return nil
 }
 
 type symbolCount struct {
