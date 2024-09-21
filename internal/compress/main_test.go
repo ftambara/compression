@@ -314,3 +314,41 @@ func TestHuffmanEncoder(t *testing.T) {
 	assertHuffmanEncoding(t, DefaultTree, []byte("abbac"), []byte{0b10110110, 0b10111000})
 	assertHuffmanEncoding(t, DefaultTree, []byte{}, []byte{})
 }
+
+func TestHuffmanEncodeDecode(t *testing.T) {
+	type testCase struct {
+		name    string
+		message []byte
+	}
+	table := []testCase{
+		{"empty message", []byte{}},
+		{"single character", []byte{'a'}},
+		{"multiple characters", []byte("abbacca")},
+	}
+
+	for _, tc := range table {
+		t.Run(tc.name, func(t *testing.T) {
+			encoder := NewHuffmanEncoder(bytes.NewBuffer(tc.message))
+			encoder.SetTree(&DefaultTree)
+			encoded := make([]byte, len(tc.message)*codepointMaxLength)
+			n, err := encoder.Read(encoded)
+			if err != nil && err != io.EOF {
+				t.Fatalf("unexpected error %v", err)
+			}
+
+			decoder := NewHuffmanDecoder(bytes.NewBuffer(encoded[:n]))
+			decoder.SetTree(&DefaultTree)
+			decoded := make([]byte, len(tc.message))
+			n, err = decoder.Read(decoded)
+			if err != nil && err != io.EOF {
+				t.Fatalf("unexpected error %v", err)
+			}
+			if n != len(tc.message) {
+				t.Fatalf("expected n = %v, got %v", len(tc.message), n)
+			}
+			if !slices.Equal(decoded, tc.message) {
+				t.Errorf("expected %v, got %v", tc.message, decoded)
+			}
+		})
+	}
+}
