@@ -22,7 +22,7 @@ const (
 
 type HuffmanDecoder struct {
 	rd      io.Reader
-	tree    *huffmanTree
+	tree    *HuffmanTree
 	pending []byte
 }
 
@@ -34,7 +34,7 @@ func NewHuffmanDecoder(rd io.Reader) *HuffmanDecoder {
 	}
 }
 
-func (hd *HuffmanDecoder) SetTree(t *huffmanTree) {
+func (hd *HuffmanDecoder) SetTree(t *HuffmanTree) {
 	hd.tree = t
 }
 
@@ -82,7 +82,7 @@ func (hd *HuffmanDecoder) Read(buffer []byte) (int, error) {
 
 type HuffmanEncoder struct {
 	rd   io.Reader
-	tree *huffmanTree
+	tree *HuffmanTree
 }
 
 func NewHuffmanEncoder(rd io.Reader) *HuffmanEncoder {
@@ -92,7 +92,7 @@ func NewHuffmanEncoder(rd io.Reader) *HuffmanEncoder {
 	}
 }
 
-func (he *HuffmanEncoder) SetTree(t *huffmanTree) {
+func (he *HuffmanEncoder) SetTree(t *HuffmanTree) {
 	he.tree = t
 }
 
@@ -152,12 +152,12 @@ var (
 	ErrInvalidPadding = errors.New("invalid padding")
 )
 
-type huffmanTree struct {
+type HuffmanTree struct {
 	root   *huffmanNode
 	leaves map[byte]*huffmanNode
 }
 
-func newHuffmanTree(root huffmanNode) huffmanTree {
+func newHuffmanTree(root huffmanNode) HuffmanTree {
 	type stackItem struct {
 		node      *huffmanNode
 		accumCode []codepoint
@@ -180,7 +180,7 @@ func newHuffmanTree(root huffmanNode) huffmanTree {
 			for _, b := range item.accumCode {
 				codept = (codept << 1) + b
 			}
-			node.code = huffmanCode{codepoint: codept, length: len(item.accumCode)}
+			node.code = huffmanCode{Codepoint: codept, Length: len(item.accumCode)}
 			continue
 		}
 		if node.left != nil {
@@ -195,12 +195,12 @@ func newHuffmanTree(root huffmanNode) huffmanTree {
 			nodeStack = append(nodeStack, stackItem{node.right, append(item.accumCode, 1)})
 		}
 	}
-	return huffmanTree{root: actualRoot, leaves: children}
+	return HuffmanTree{root: actualRoot, leaves: children}
 }
 
-func buildHuffmanTree(symbolFrequencies []symbolCount) (huffmanTree, error) {
+func buildHuffmanTree(symbolFrequencies []symbolCount) (HuffmanTree, error) {
 	if len(symbolFrequencies) == 0 {
-		return huffmanTree{}, errors.New("empty symbolFrequencies")
+		return HuffmanTree{}, errors.New("empty symbolFrequencies")
 	}
 
 	items := make([]pq.PQItem[*huffmanNode], len(symbolFrequencies))
@@ -222,7 +222,7 @@ func buildHuffmanTree(symbolFrequencies []symbolCount) (huffmanTree, error) {
 	return newHuffmanTree(*queue.Pop().Value), nil
 }
 
-func (t huffmanTree) ExportCSV(w io.Writer) error {
+func (t HuffmanTree) ExportCSV(w io.Writer) error {
 	// Export the tree as symbol, code
 	_, err := w.Write([]byte("symbol,code\n"))
 	if err != nil {
@@ -230,12 +230,12 @@ func (t huffmanTree) ExportCSV(w io.Writer) error {
 	}
 	for symbol, leaf := range t.leaves {
 		code := leaf.code
-		fmt.Fprintf(w, "%c,%0*b\n", symbol, code.length, code.codepoint)
+		fmt.Fprintf(w, "%c,%0*b\n", symbol, code.Length, code.Codepoint)
 	}
 	return nil
 }
 
-func (t huffmanTree) decode(codes []byte, out []byte) (used, written int, err error) {
+func (t HuffmanTree) decode(codes []byte, out []byte) (used, written int, err error) {
 	node := t.root
 	if node == nil {
 		return 0, 0, ErrEmptyTree
@@ -302,7 +302,7 @@ func (t huffmanTree) decode(codes []byte, out []byte) (used, written int, err er
 	return used, written, nil
 }
 
-func (t huffmanTree) symbolCode(symbol byte) (huffmanCode, error) {
+func (t HuffmanTree) symbolCode(symbol byte) (huffmanCode, error) {
 	leaf, ok := t.leaves[symbol]
 	if !ok {
 		return huffmanCode{}, fmt.Errorf("symbol 0x%x not present in tree", symbol)
@@ -319,8 +319,8 @@ func (c codepoint) toBytes() []byte {
 }
 
 type huffmanCode struct {
-	codepoint codepoint
-	length    int
+	Codepoint codepoint
+	Length    int
 }
 
 // packCodes turns a slice of codes into a slice of bytes, properly packed
@@ -330,14 +330,14 @@ func packCodes(codes []huffmanCode) []byte {
 	var currentCode codepoint
 	spaceLeft := codepointMaxLength
 	for _, code := range codes {
-		if code.length >= spaceLeft {
-			currentCode += code.codepoint >> codepoint(code.length-spaceLeft)
+		if code.Length >= spaceLeft {
+			currentCode += code.Codepoint >> codepoint(code.Length-spaceLeft)
 			result = append(result, byte(currentCode))
 			currentCode = 0
 			spaceLeft = codepointMaxLength
 		} else {
-			currentCode += code.codepoint << codepoint(spaceLeft-code.length)
-			spaceLeft -= code.length
+			currentCode += code.Codepoint << codepoint(spaceLeft-code.Length)
+			spaceLeft -= code.Length
 		}
 	}
 	if currentCode != 0 {

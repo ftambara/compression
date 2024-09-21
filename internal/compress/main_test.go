@@ -69,15 +69,15 @@ func Test_newHuffmanTree(t *testing.T) {
 	if !maps.Equal(expectedLeaves, tree.leaves) {
 		t.Fatalf("expected %v, got %v", expectedLeaves, tree.leaves)
 	}
-	expectedCode := huffmanCode{codepoint: 0b10, length: 2}
+	expectedCode := huffmanCode{Codepoint: 0b10, Length: 2}
 	if aLeaf.code != expectedCode {
 		t.Errorf("expected %v, got %v", expectedCode, aLeaf.code)
 	}
-	expectedCode = huffmanCode{codepoint: 0b110, length: 3}
+	expectedCode = huffmanCode{Codepoint: 0b110, Length: 3}
 	if bLeaf.code != expectedCode {
 		t.Errorf("expected %v, got %v", expectedCode, bLeaf.code)
 	}
-	expectedCode = huffmanCode{codepoint: 0b111, length: 3}
+	expectedCode = huffmanCode{Codepoint: 0b111, Length: 3}
 	if cLeaf.code != expectedCode {
 		t.Errorf("expected %v, got %v", expectedCode, cLeaf.code)
 	}
@@ -194,7 +194,7 @@ func TestHuffmanTreeExportCSV(t *testing.T) {
 
 func assertHuffmanDecoding(
 	t *testing.T,
-	tree huffmanTree,
+	tree HuffmanTree,
 	codes []byte,
 	expectedWritten int,
 	expectedUsed int,
@@ -276,7 +276,7 @@ func alignToLeft(n uint64) uint64 {
 }
 
 func Test_decodeHuffmanEmpty(t *testing.T) {
-	tree := huffmanTree{}
+	tree := HuffmanTree{}
 	codes := []byte{}
 	assertHuffmanDecoding(t, tree, codes, 0, 0, ErrEmptyTree, nil)
 
@@ -287,7 +287,7 @@ func Test_decodeHuffmanEmpty(t *testing.T) {
 func Test_decodeHuffman(t *testing.T) {
 	type testCase struct {
 		name            string
-		tree            *huffmanTree
+		tree            *HuffmanTree
 		codes           []byte
 		expectedWritten int
 		expectedUsed    int
@@ -398,7 +398,7 @@ func Test_decodeHuffman(t *testing.T) {
 
 func assertHuffmanEncoding(
 	t *testing.T,
-	tree huffmanTree,
+	tree HuffmanTree,
 	message []byte,
 	expectedCode []byte,
 ) {
