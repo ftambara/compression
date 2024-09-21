@@ -263,6 +263,14 @@ func (t huffmanTree) decode(codes []byte, out []byte) (used, written int, err er
 	return used, written, nil
 }
 
+func (t huffmanTree) symbolCode(symbol byte) (huffmanCode, error) {
+	leaf, ok := t.leaves[symbol]
+	if !ok {
+		return huffmanCode{}, fmt.Errorf("symbol 0x%x not present in tree", symbol)
+	}
+	return leaf.code, nil
+}
+
 const codepointMaxLength = 8
 
 type codepoint byte // TODO: This should be uint16
@@ -293,14 +301,6 @@ func packCodes(codes []huffmanCode) []byte {
 		result = append(result, byte(currentCode))
 	}
 	return result
-}
-
-func (t huffmanTree) symbolCode(symbol byte) (huffmanCode, error) {
-	leaf, ok := t.leaves[symbol]
-	if !ok {
-		return huffmanCode{}, fmt.Errorf("symbol 0x%x not present in tree", symbol)
-	}
-	return leaf.code, nil
 }
 
 type huffmanMovement int
