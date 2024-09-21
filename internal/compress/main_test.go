@@ -82,6 +82,88 @@ func Test_newHuffmanTree(t *testing.T) {
 	}
 }
 
+func Test_buildHuffmanTree(t *testing.T) {
+	_, err := buildHuffmanTree([]symbolCount{})
+	if err == nil {
+		t.Errorf("expected an error due to empty slice")
+	}
+
+	freqs := []symbolCount{
+		{symbol: 'A', count: 5},
+		{symbol: 'B', count: 2},
+		{symbol: 'C', count: 3},
+	}
+	tree, err := buildHuffmanTree(freqs)
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+	expectedTree := newHuffmanTree(
+		*newHuffmanInternalNode(
+			newHuffmanLeaf('A'),
+			newHuffmanInternalNode(
+				newHuffmanLeaf('B'),
+				newHuffmanLeaf('C'),
+			),
+		),
+	)
+
+	// compare leaves
+	for symbol, expectedLeaf := range expectedTree.leaves {
+		actualLeaf, ok := tree.leaves[symbol]
+		if !ok {
+			t.Errorf("expected leaf for symbol %v, got nil", symbol)
+		}
+		if expectedLeaf.symbol != actualLeaf.symbol {
+			t.Errorf("expected symbol %v, got %v", expectedLeaf.symbol, actualLeaf.symbol)
+		}
+		if expectedLeaf.code != actualLeaf.code {
+			t.Errorf("expected code %v, got %v", expectedLeaf.code, actualLeaf.code)
+		}
+	}
+
+	expectedStack := []*huffmanNode{expectedTree.root}
+	actualStack := []*huffmanNode{tree.root}
+	count := 0
+	for len(actualStack) != 0 {
+		expectedItem := expectedStack[len(expectedStack)-1]
+		expectedStack = expectedStack[:len(expectedStack)-1]
+
+		actualItem := actualStack[len(actualStack)-1]
+		actualStack = actualStack[:len(actualStack)-1]
+
+		if expectedItem.isLeaf() {
+			if !actualItem.isLeaf() {
+				t.Errorf("#%d: expected leaf, got internal node", count)
+			}
+			if expectedItem.symbol != actualItem.symbol {
+				t.Errorf("#%d: expected symbol %v, got %v", count, expectedItem.symbol, actualItem.symbol)
+			}
+			if expectedItem.code != actualItem.code {
+				t.Errorf("#%d: expected code %v, got %v", count, expectedItem.code, actualItem.code)
+			}
+		} else {
+			if actualItem.isLeaf() {
+				t.Errorf("#%d: expected internal node, got leaf", count)
+			}
+			if expectedItem.left != nil {
+				if actualItem.left == nil {
+					t.Errorf("#%d: expected left node, got nil", count)
+				}
+				expectedStack = append(expectedStack, expectedItem.left)
+				actualStack = append(actualStack, actualItem.left)
+			}
+			if expectedItem.right != nil {
+				if actualItem.right == nil {
+					t.Errorf("#%d: expected right node, got nil", count)
+				}
+				expectedStack = append(expectedStack, expectedItem.right)
+				actualStack = append(actualStack, actualItem.right)
+			}
+		}
+		count++
+	}
+}
+
 func assertHuffmanDecoding(
 	t *testing.T,
 	tree huffmanTree,

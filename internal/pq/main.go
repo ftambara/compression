@@ -6,7 +6,7 @@ import (
 
 type PQItem[T any] struct {
 	Value    T
-	Priority int
+	Priority int64
 }
 
 type PriorityQueue[T any] struct {

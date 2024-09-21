@@ -7,6 +7,8 @@ import (
 	"math/bits"
 	"slices"
 	"unicode"
+
+	"github.com/ftambara/compression/internal/pq"
 )
 
 const (
@@ -188,12 +190,36 @@ func newHuffmanTree(root huffmanNode) huffmanTree {
 			)
 		}
 		if node.right != nil {
-			// I don't need to clone accumcode again since this will be the only
+			// Don't need to clone accumcode again since this will be the only
 			// potential reference left to the original
 			nodeStack = append(nodeStack, stackItem{node.right, append(item.accumCode, 1)})
 		}
 	}
 	return huffmanTree{root: actualRoot, leaves: children}
+}
+
+func buildHuffmanTree(symbolFrequencies []symbolCount) (huffmanTree, error) {
+	if len(symbolFrequencies) == 0 {
+		return huffmanTree{}, errors.New("empty symbolFrequencies")
+	}
+
+	items := make([]pq.PQItem[*huffmanNode], len(symbolFrequencies))
+	for i, sf := range symbolFrequencies {
+		items[i] = pq.PQItem[*huffmanNode]{
+			Value:    newHuffmanLeaf(sf.symbol),
+			Priority: -int64(sf.count), // negate to make lowest count come first
+		}
+	}
+	queue := pq.NewPriorityQueue(items)
+	for queue.Len() >= 2 {
+		node1 := queue.Pop()
+		node2 := queue.Pop()
+		queue.Push(pq.PQItem[*huffmanNode]{
+			Value:    newHuffmanInternalNode(node1.Value, node2.Value),
+			Priority: node1.Priority + node2.Priority,
+		})
+	}
+	return newHuffmanTree(*queue.Pop().Value), nil
 }
 
 func (t huffmanTree) decode(codes []byte, out []byte) (used, written int, err error) {
