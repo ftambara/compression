@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/bits"
 	"slices"
 	"unicode"
@@ -23,7 +24,7 @@ const (
 	encoderBufferLen = 8 * 1024
 
 	// max number of symbols in a huffman tree
-	maxSymbols = 10 * 1024
+	maxReadBytes = 16 * 1024
 )
 
 type HuffmanReader struct {
@@ -198,16 +199,44 @@ func newHuffmanTree(root huffmanNode) HuffmanTree {
 }
 
 func BuildHuffmanTree(input io.Reader) (HuffmanTree, error) {
-	symbols := make([]byte, maxSymbols)
+	symbols := make([]byte, maxReadBytes)
 
 	n, err := input.Read(symbols)
 	if err != nil && err != io.EOF {
 		return HuffmanTree{}, err
 	}
-	if n == maxSymbols {
-		log.Printf("Warning: max number of symbols reached (%d), cropping input", maxSymbols)
+	if n == maxReadBytes {
+		log.Printf("Warning: input too large, using only first %d bytes", n)
 	}
 	freqs := symbolCounts(symbols[:n])
+	return buildHuffmanTreeFromCounts(freqs)
+}
+
+// BuildUniversalHuffmanTree builds a Huffman tree with codes for all possible symbols,
+// not just the ones present in the input.
+func BuildUniversalHuffmanTree(input io.Reader) (HuffmanTree, error) {
+	symbols := make([]byte, maxReadBytes)
+
+	n, err := input.Read(symbols)
+	if err != nil && err != io.EOF {
+		return HuffmanTree{}, err
+	}
+	if n == maxReadBytes {
+		log.Printf("Warning: input too large, using only first %d bytes", n)
+	}
+	symbols = symbols[:n]
+
+	// add all missing symbols with frequency 0
+	presentSymbols := make(map[byte]bool, len(symbols))
+	for _, symbol := range symbols {
+		presentSymbols[symbol] = true
+	}
+	for symbol := range byte(math.MaxUint8) {
+		if !presentSymbols[symbol] {
+			symbols = append(symbols, symbol)
+		}
+	}
+	freqs := symbolCounts(symbols)
 	return buildHuffmanTreeFromCounts(freqs)
 }
 
@@ -236,8 +265,7 @@ func buildHuffmanTreeFromCounts(symbolFrequencies []symbolCount) (HuffmanTree, e
 }
 
 func (t HuffmanTree) MarshalJSON() ([]byte, error) {
-	// discard the hidden root
-	trueRoot := t.root.right
+	trueRoot := t.root.right // discard the hidden root
 	return json.Marshal(trueRoot)
 }
 

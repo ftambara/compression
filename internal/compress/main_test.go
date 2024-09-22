@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"maps"
+	"math"
 	"os"
 	"slices"
 	"testing"
@@ -229,6 +230,23 @@ func TestBuildHuffmanTree(t *testing.T) {
 	assertHuffmanTreeEqual(t, expectedTree, tree)
 }
 
+func TestBuildUniversalHuffmanTree(t *testing.T) {
+	input := bytes.NewBufferString("")
+	_, err := BuildUniversalHuffmanTree(input)
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+
+	input = bytes.NewBufferString("ABAC")
+	tree, err := BuildUniversalHuffmanTree(input)
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+	if len(tree.leaves) != math.MaxUint8 {
+		t.Errorf("expected %v leaves, got %v", math.MaxUint8, len(tree.leaves))
+	}
+}
+
 func assertHuffmanDecoding(
 	t *testing.T,
 	tree HuffmanTree,
@@ -448,7 +466,7 @@ func assertHuffmanWrite(
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
-	if n != len(expectedCode) {
+	if n != len(message) {
 		t.Fatalf("expected n = %v, got %v", len(expectedCode), n)
 	}
 	if !slices.Equal(buffer.Bytes(), expectedCode) {
