@@ -159,14 +159,14 @@ type HuffmanTree struct {
 func newHuffmanTree(root huffmanNode) HuffmanTree {
 	type stackItem struct {
 		node      *huffmanNode
-		accumCode []codepoint
+		accumCode []byte
 	}
 
 	// New trees have a "hidden" root that makes all valid codes start with 1
 	actualRoot := newHuffmanInternalNode(nil, &root)
 
 	children := make(map[byte]*huffmanNode, 0)
-	nodeStack := []stackItem{{actualRoot, []codepoint{}}}
+	nodeStack := []stackItem{{actualRoot, []byte{}}}
 
 	for len(nodeStack) != 0 {
 		item := nodeStack[len(nodeStack)-1]
@@ -177,7 +177,7 @@ func newHuffmanTree(root huffmanNode) HuffmanTree {
 			children[node.symbol] = node
 			var codept codepoint
 			for _, b := range item.accumCode {
-				codept = (codept << 1) + b
+				codept = (codept << 1) + codepoint(b)
 			}
 			node.code = huffmanCode{Codepoint: codept, Length: len(item.accumCode)}
 			continue
@@ -339,9 +339,9 @@ func (t HuffmanTree) symbolCode(symbol byte) (huffmanCode, error) {
 	return leaf.code, nil
 }
 
-const codepointMaxLength = 8
+const codepointMaxLength = 16
 
-type codepoint byte // TODO: This should be uint16
+type codepoint uint16
 
 func (c codepoint) toBytes() []byte {
 	return []byte{byte(c)}
@@ -357,17 +357,20 @@ type huffmanCode struct {
 func packCodes(codes []huffmanCode) []byte {
 	result := make([]byte, 0)
 	var currentCode codepoint
-	spaceLeft := codepointMaxLength
+	spaceLeft := 8
 	for _, code := range codes {
-		if code.Length >= spaceLeft {
-			currentCode += code.Codepoint >> codepoint(code.Length-spaceLeft)
+		codept := code.Codepoint
+		codeLen := code.Length
+		for codeLen > spaceLeft {
+			currentCode += codept >> codepoint(codeLen-spaceLeft)
 			result = append(result, byte(currentCode))
+			codeLen -= spaceLeft
+			codept &= (1 << codeLen) - 1
 			currentCode = 0
-			spaceLeft = codepointMaxLength
-		} else {
-			currentCode += code.Codepoint << codepoint(spaceLeft-code.Length)
-			spaceLeft -= code.Length
+			spaceLeft = 8
 		}
+		currentCode += codept << codepoint(spaceLeft-codeLen)
+		spaceLeft -= codeLen
 	}
 	if currentCode != 0 {
 		result = append(result, byte(currentCode))
