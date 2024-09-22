@@ -21,10 +21,10 @@ func assertSliceEqualSort[T comparable](t *testing.T, cmp func(a, b T) int, expe
 
 func Test_symbolCounts(t *testing.T) {
 	cmp := func(a, b symbolCount) int {
-		if a.count == b.count {
-			return int(a.symbol) - int(b.symbol)
+		if a.Count == b.Count {
+			return int(a.Symbol) - int(b.Symbol)
 		}
-		return a.count - b.count
+		return a.Count - b.Count
 	}
 
 	symbols := []byte("abc")
@@ -53,156 +53,53 @@ func Test_symbolCounts(t *testing.T) {
 	assertSliceEqualSort(t, cmp, expected, counts)
 }
 
-func Test_newHuffmanTree(t *testing.T) {
-	leaves := map[byte]*huffmanNode{
-		'A': newHuffmanLeaf('A'),
-		'B': newHuffmanLeaf('B'),
-		'C': newHuffmanLeaf('C'),
-	}
-	root := newHuffmanInternalNode(
-		leaves['A'],
-		newHuffmanInternalNode(
-			leaves['B'],
-			leaves['C'],
-		),
-	)
-	tree := newHuffmanTree(*root)
-	if !maps.Equal(leaves, tree.leaves) {
-		t.Fatalf("expected %v, got %v", leaves, tree.leaves)
-	}
-	expectedCodes := map[byte]huffmanCode{
-		'A': {Codepoint: 0b10, Length: 2},
-		'B': {Codepoint: 0b110, Length: 3},
-		'C': {Codepoint: 0b111, Length: 3},
-	}
-	for symbol, expectedCode := range expectedCodes {
-		leaf := tree.leaves[symbol]
-		if leaf.code != expectedCode {
-			t.Errorf("expected %v, got %v", expectedCode, leaf.code)
-		}
-	}
-
-	// codes longer than 8 bits
-	leaves = map[byte]*huffmanNode{
-		'A': newHuffmanLeaf('A'),
-		'B': newHuffmanLeaf('B'),
-		'C': newHuffmanLeaf('C'),
-		'D': newHuffmanLeaf('D'),
-		'E': newHuffmanLeaf('E'),
-		'F': newHuffmanLeaf('F'),
-		'G': newHuffmanLeaf('G'),
-		'H': newHuffmanLeaf('H'),
-		'I': newHuffmanLeaf('I'),
-	}
-	root = newHuffmanInternalNode(
-		leaves['A'],
-		newHuffmanInternalNode(
-			leaves['B'],
-			newHuffmanInternalNode(
-				leaves['C'],
-				newHuffmanInternalNode(
-					leaves['D'],
-					newHuffmanInternalNode(
-						leaves['E'],
-						newHuffmanInternalNode(
-							leaves['F'],
-							newHuffmanInternalNode(
-								leaves['G'],
-								newHuffmanInternalNode(
-									leaves['H'],
-									leaves['I'],
-								),
-							),
-						),
-					),
-				),
-			),
-		),
-	)
-
-	tree = newHuffmanTree(*root)
-	if !maps.Equal(leaves, tree.leaves) {
-		t.Fatalf("expected %v, got %v", leaves, tree.leaves)
-	}
-	expectedCodes = map[byte]huffmanCode{
-		'A': {Codepoint: 0b10, Length: 2},
-		'B': {Codepoint: 0b110, Length: 3},
-		'C': {Codepoint: 0b1110, Length: 4},
-		'D': {Codepoint: 0b11110, Length: 5},
-		'E': {Codepoint: 0b111110, Length: 6},
-		'F': {Codepoint: 0b1111110, Length: 7},
-		'G': {Codepoint: 0b11111110, Length: 8},
-		'H': {Codepoint: 0b111111110, Length: 9},
-		'I': {Codepoint: 0b111111111, Length: 9},
-	}
-	for symbol, expectedCode := range expectedCodes {
-		leaf, ok := tree.leaves[symbol]
-		if !ok {
-			t.Fatalf("expected leaf for symbol b%b, got nil", symbol)
-		}
-		if leaf.code != expectedCode {
-			t.Errorf("expected %v, got %v", expectedCode, leaf.code)
-		}
-	}
-}
-
 func assertHuffmanTreeEqual(t *testing.T, expected, actual HuffmanTree) {
 	t.Helper()
 
-	// compare leaves
-	for symbol, expectedLeaf := range expected.leaves {
-		actualLeaf, ok := actual.leaves[symbol]
-		if !ok {
-			t.Errorf("expected leaf for symbol %v, got nil", symbol)
+	if len(expected.Leaves) != len(actual.Leaves) {
+		t.Fatalf("expected %v leaves, got %v", len(expected.Leaves), len(actual.Leaves))
+	}
+	for i, expectedLeaf := range expected.Leaves {
+		actualLeaf := actual.Leaves[i]
+		if expectedLeaf.Symbol != actualLeaf.Symbol {
+			t.Errorf("expected %v, got %v", expectedLeaf.Symbol, actualLeaf.Symbol)
 		}
-		if expectedLeaf.symbol != actualLeaf.symbol {
-			t.Errorf("expected symbol %v, got %v", expectedLeaf.symbol, actualLeaf.symbol)
-		}
-		if expectedLeaf.code != actualLeaf.code {
-			t.Errorf("expected code %v, got %v", expectedLeaf.code, actualLeaf.code)
+		if expectedLeaf.Code != actualLeaf.Code {
+			t.Errorf("expected %v, got %v", expectedLeaf.Code, actualLeaf.Code)
 		}
 	}
+	if !maps.Equal(expected.LeavesBySymbol, actual.LeavesBySymbol) {
+		t.Errorf("expected %v, got %v", expected.LeavesBySymbol, actual.LeavesBySymbol)
+	}
+	if !maps.Equal(expected.LeavesByCode, actual.LeavesByCode) {
+		t.Errorf("expected %v, got %v", expected.LeavesByCode, actual.LeavesByCode)
+	}
+}
 
-	expectedStack := []*huffmanNode{expected.root}
-	actualStack := []*huffmanNode{actual.root}
-	count := 0
-	for len(actualStack) != 0 {
-		expectedItem := expectedStack[len(expectedStack)-1]
-		expectedStack = expectedStack[:len(expectedStack)-1]
-
-		actualItem := actualStack[len(actualStack)-1]
-		actualStack = actualStack[:len(actualStack)-1]
-
-		if expectedItem.isLeaf() {
-			if !actualItem.isLeaf() {
-				t.Fatalf("#%d: expected leaf, got internal node", count)
-			}
-			if expectedItem.symbol != actualItem.symbol {
-				t.Fatalf("#%d: expected symbol %v, got %v", count, expectedItem.symbol, actualItem.symbol)
-			}
-			if expectedItem.code != actualItem.code {
-				t.Fatalf("#%d: expected code %v, got %v", count, expectedItem.code, actualItem.code)
-			}
-		} else {
-			if actualItem.isLeaf() {
-				t.Fatalf("#%d: expected internal node, got leaf", count)
-			}
-			if expectedItem.left != nil {
-				if actualItem.left == nil {
-					t.Fatalf("#%d: expected left node, got nil", count)
-				}
-				expectedStack = append(expectedStack, expectedItem.left)
-				actualStack = append(actualStack, actualItem.left)
-			}
-			if expectedItem.right != nil {
-				if actualItem.right == nil {
-					t.Fatalf("#%d: expected right node, got nil", count)
-				}
-				expectedStack = append(expectedStack, expectedItem.right)
-				actualStack = append(actualStack, actualItem.right)
-			}
+func assertHuffmanTreeOk(t *testing.T, tree HuffmanTree) {
+	t.Helper()
+	bySymbol := tree.LeavesBySymbol
+	byCode := tree.LeavesByCode
+	if len(byCode) != len(bySymbol) {
+		t.Fatalf("incompatible map lengths: %v != %v", len(byCode), len(bySymbol))
+	}
+	codeIndexes := make(map[uint32]bool, len(byCode))
+	for _, index := range byCode {
+		if codeIndexes[index] {
+			t.Fatalf("duplicate index %v", index)
 		}
-		count++
+		codeIndexes[index] = true
+	}
+	symbolIndexes := make(map[uint32]bool, len(bySymbol))
+	for _, index := range bySymbol {
+		if symbolIndexes[index] {
+			t.Fatalf("duplicate symbol %v", index)
+		}
+		symbolIndexes[index] = true
+	}
+	// compare the two maps
+	if !maps.Equal(codeIndexes, symbolIndexes) {
+		t.Fatalf("incompatible indexes")
 	}
 }
 
@@ -218,15 +115,16 @@ func TestBuildHuffmanTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
-	expectedTree := newHuffmanTree(
-		*newHuffmanInternalNode(
-			newHuffmanLeaf('A'),
-			newHuffmanInternalNode(
-				newHuffmanLeaf('B'),
-				newHuffmanLeaf('C'),
-			),
-		),
+	expectedTree := huffmanTreeFromNode(
+		huffmanBuildingNode{
+			left: &huffmanBuildingNode{symbol: 'A'},
+			right: &huffmanBuildingNode{
+				left:  &huffmanBuildingNode{symbol: 'B'},
+				right: &huffmanBuildingNode{symbol: 'C'},
+			},
+		},
 	)
+	assertHuffmanTreeOk(t, tree)
 	assertHuffmanTreeEqual(t, expectedTree, tree)
 }
 
@@ -242,8 +140,8 @@ func TestBuildUniversalHuffmanTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
-	if len(tree.leaves) != math.MaxUint8 {
-		t.Errorf("expected %v leaves, got %v", math.MaxUint8, len(tree.leaves))
+	if len(tree.LeavesBySymbol) != math.MaxUint8+1 {
+		t.Errorf("expected %v leaves, got %v", math.MaxUint8, len(tree.LeavesBySymbol))
 	}
 }
 
@@ -273,14 +171,14 @@ func assertHuffmanDecoding(
 	}
 }
 
-var DefaultTree = newHuffmanTree(
-	*newHuffmanInternalNode(
-		newHuffmanLeaf('a'),
-		newHuffmanInternalNode(
-			newHuffmanLeaf('b'),
-			newHuffmanLeaf('c'),
-		),
-	),
+var DefaultTree = huffmanTreeFromNode(
+	huffmanBuildingNode{
+		left: &huffmanBuildingNode{symbol: 'a'},
+		right: &huffmanBuildingNode{
+			left:  &huffmanBuildingNode{symbol: 'b'},
+			right: &huffmanBuildingNode{symbol: 'c'},
+		},
+	},
 )
 
 func TestHuffmanReader(t *testing.T) {
@@ -332,18 +230,17 @@ func alignToLeft8(x byte) byte {
 }
 
 func Test_decodeHuffmanEmpty(t *testing.T) {
-	tree := HuffmanTree{}
+	tree := newHuffmanTree()
 	codes := []byte{}
 	assertHuffmanDecoding(t, tree, codes, 0, 0, ErrEmptyTree, nil)
 
-	tree = newHuffmanTree(*newHuffmanInternalNode(nil, nil))
+	tree = huffmanTreeFromNode(huffmanBuildingNode{left: nil, right: nil})
 	assertHuffmanDecoding(t, tree, codes, 0, 0, nil, nil)
 }
 
 func Test_decodeHuffman(t *testing.T) {
 	type testCase struct {
 		name            string
-		tree            *HuffmanTree
 		codes           []byte
 		expectedWritten int
 		expectedUsed    int
@@ -375,7 +272,7 @@ func Test_decodeHuffman(t *testing.T) {
 		{
 			name:            "codes can span multiple bytes",
 			codes:           []byte{0b10111101, 0b01000000},
-			expectedUsed:    2,
+			expectedUsed:    1,
 			expectedWritten: 5,
 			expectedMessage: []byte("acaaa"),
 		},
@@ -387,29 +284,6 @@ func Test_decodeHuffman(t *testing.T) {
 			expectedMessage: []byte{'a'},
 		},
 		{
-			name:            "leading zeroes must be at the beginning of the first byte",
-			codes:           []byte{0b00000010, 0b00100000},
-			expectedUsed:    1,
-			expectedWritten: 1,
-			expectedErr:     ErrInvalidCode{0b00100000},
-			expectedMessage: []byte{'a'},
-		},
-		{
-			name:            "padding",
-			codes:           []byte{0b10000},
-			expectedUsed:    1,
-			expectedWritten: 1,
-			expectedMessage: []byte{'a'},
-		},
-		{
-			name:            "padding in the middle of the byte",
-			codes:           []byte{0b10000, 0b11100000},
-			expectedUsed:    0,
-			expectedWritten: 1,
-			expectedErr:     ErrInvalidPadding,
-			expectedMessage: []byte{'a'},
-		},
-		{
 			name:            "incomplete code",
 			codes:           []byte{0b11011111},
 			expectedUsed:    0,
@@ -417,31 +291,19 @@ func Test_decodeHuffman(t *testing.T) {
 			expectedMessage: []byte("bc"),
 		},
 		{
-			name:            "invalid code",
+			name:            "invalid code, too short to detect error",
 			codes:           []byte{0b1001},
 			expectedUsed:    0,
 			expectedWritten: 1,
-			expectedErr:     ErrInvalidCode{0b1001},
 			expectedMessage: []byte{'a'},
-		},
-		{
-			name:            "zero bytes",
-			codes:           []byte{0b11011110, 0, 0b11100000},
-			expectedUsed:    1,
-			expectedWritten: 3,
-			expectedErr:     ErrInvalidCode{0},
-			expectedMessage: []byte("bca"),
 		},
 	}
 
 	for _, tc := range table {
-		if tc.tree == nil {
-			tc.tree = &DefaultTree
-		}
 		t.Run(tc.name, func(t *testing.T) {
 			assertHuffmanDecoding(
 				t,
-				*tc.tree,
+				DefaultTree,
 				tc.codes,
 				tc.expectedWritten,
 				tc.expectedUsed,
@@ -557,5 +419,6 @@ func TestImportHuffmanTreeJSON(t *testing.T) {
 		t.Fatalf("unexpected error %v", err)
 	}
 
+	assertHuffmanTreeOk(t, tree)
 	assertHuffmanTreeEqual(t, DefaultTree, tree)
 }

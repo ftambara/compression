@@ -1,1 +1,1 @@
-{"left":{"symbol":97,"code":{"Codepoint":2,"Length":2}},"right":{"left":{"symbol":98,"code":{"Codepoint":6,"Length":3}},"right":{"symbol":99,"code":{"Codepoint":7,"Length":3}}}}
+{"Leaves":[{"Symbol":99,"Code":{"Codepoint":7,"Length":3}},{"Symbol":98,"Code":{"Codepoint":6,"Length":3}},{"Symbol":97,"Code":{"Codepoint":2,"Length":2}}],"LeavesByCode":{"2":2,"6":1,"7":0},"LeavesBySymbol":{"97":2,"98":1,"99":0}}

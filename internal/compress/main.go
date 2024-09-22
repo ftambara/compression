@@ -1,7 +1,6 @@
 package compress
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -54,7 +53,9 @@ func (hr *HuffmanReader) Read(p []byte) (int, error) {
 		return 0, errors.New("on-the-fly tree generation not implemented yet")
 	}
 	if len(hr.pending) > 0 {
-		return 0, errors.New("must implement processing of pending bytes")
+		pending := hr.pending
+		hr.pending = pending[:0]
+		hr.Read(pending)
 	}
 
 	readbuff := make([]byte, decoderBufferLen)
@@ -136,19 +137,11 @@ func (hw *HuffmanWriter) Write(message []byte) (int, error) {
 }
 
 type ErrInvalidCode struct {
-	code byte
+	codept codepoint
 }
 
 func (e ErrInvalidCode) Error() string {
-	return fmt.Sprintf("invalid code %x", e.code)
-}
-
-type ErrNoChild struct {
-	movement huffmanMovement
-}
-
-func (e ErrNoChild) Error() string {
-	return fmt.Sprintf("node has no child at side %v", e.movement)
+	return fmt.Sprintf("invalid code %x", e.codept)
 }
 
 var (
@@ -157,52 +150,9 @@ var (
 )
 
 type HuffmanTree struct {
-	root   *huffmanNode
-	leaves map[byte]*huffmanNode
-}
-
-func newHuffmanTree(root huffmanNode) HuffmanTree {
-	type stackItem struct {
-		node      *huffmanNode
-		accumCode []byte
-	}
-
-	// New trees have a "hidden" root that makes all valid codes start with 1
-	actualRoot := newHuffmanInternalNode(nil, &root)
-
-	children := make(map[byte]*huffmanNode, 0)
-	nodeStack := []stackItem{{actualRoot, []byte{}}}
-
-	for len(nodeStack) != 0 {
-		item := nodeStack[len(nodeStack)-1]
-		nodeStack = nodeStack[:len(nodeStack)-1]
-
-		node := item.node
-		if node.isLeaf() {
-			children[node.symbol] = node
-			var codept codepoint
-			for _, b := range item.accumCode {
-				codept = (codept << 1) + codepoint(b)
-			}
-			node.code = huffmanCode{Codepoint: codept, Length: len(item.accumCode)}
-			if len(item.accumCode) > codepointMaxLength {
-				panic("code too long")
-			}
-			continue
-		}
-		if node.left != nil {
-			nodeStack = append(
-				nodeStack,
-				stackItem{node.left, append(slices.Clone(item.accumCode), 0)},
-			)
-		}
-		if node.right != nil {
-			// Don't need to clone accumcode again since this will be the only
-			// potential reference left to the original
-			nodeStack = append(nodeStack, stackItem{node.right, append(item.accumCode, 1)})
-		}
-	}
-	return HuffmanTree{root: actualRoot, leaves: children}
+	Leaves         []*huffmanLeaf
+	LeavesByCode   map[codepoint]uint32
+	LeavesBySymbol map[byte]uint32
 }
 
 func BuildHuffmanTree(input io.Reader) (HuffmanTree, error) {
@@ -216,7 +166,7 @@ func BuildHuffmanTree(input io.Reader) (HuffmanTree, error) {
 		log.Printf("Warning: input too large, using only first %d bytes", n)
 	}
 	freqs := symbolCounts(symbols[:n])
-	return buildHuffmanTreeFromCounts(freqs)
+	return huffmanTreeFromCounts(freqs)
 }
 
 // BuildUniversalHuffmanTree builds a Huffman tree with codes for all possible symbols,
@@ -238,52 +188,110 @@ func BuildUniversalHuffmanTree(input io.Reader) (HuffmanTree, error) {
 	for _, symbol := range symbols {
 		presentSymbols[symbol] = true
 	}
-	for symbol := range byte(math.MaxUint8) {
-		if !presentSymbols[symbol] {
-			symbols = append(symbols, symbol)
+	for symbol := range math.MaxUint8 + 1 {
+		if !presentSymbols[byte(symbol)] {
+			symbols = append(symbols, byte(symbol))
 		}
 	}
 	freqs := symbolCounts(symbols)
-	return buildHuffmanTreeFromCounts(freqs)
+	return huffmanTreeFromCounts(freqs)
 }
 
-func buildHuffmanTreeFromCounts(symbolFrequencies []symbolCount) (HuffmanTree, error) {
+// huffmanBuildingNode might represent a leaf (if left == nil && right == nil)
+// or an internal huffmanBuildingNode
+// It's only goal is to be a helper to builder code. A tree does not contain
+// huffmanBuildingNode instances
+type huffmanBuildingNode struct {
+	left, right *huffmanBuildingNode
+	symbol      byte
+	code        codepoint
+}
+
+func huffmanTreeFromCounts(symbolFrequencies []symbolCount) (HuffmanTree, error) {
 	if len(symbolFrequencies) == 0 {
 		return HuffmanTree{}, errors.New("empty symbolFrequencies")
 	}
 
-	items := make([]pq.PQItem[*huffmanNode], len(symbolFrequencies))
+	// initialize queue items
+	items := make([]pq.PQItem[*huffmanBuildingNode], len(symbolFrequencies))
 	for i, sf := range symbolFrequencies {
-		items[i] = pq.PQItem[*huffmanNode]{
-			Value:    newHuffmanLeaf(sf.symbol),
-			Priority: -int64(sf.count), // negate to make lowest count come first
+		items[i] = pq.PQItem[*huffmanBuildingNode]{
+			Value:    &huffmanBuildingNode{symbol: sf.Symbol},
+			Priority: -int64(sf.Count), // negate to make lowest count come first
 		}
 	}
+
+	// iteratively build tree using Huffman algorithm
 	queue := pq.NewPriorityQueue(items)
 	for queue.Len() >= 2 {
 		node1 := queue.Pop()
 		node2 := queue.Pop()
-		queue.Push(pq.PQItem[*huffmanNode]{
-			Value:    newHuffmanInternalNode(node1.Value, node2.Value),
+		queue.Push(pq.PQItem[*huffmanBuildingNode]{
+			Value:    &huffmanBuildingNode{left: node1.Value, right: node2.Value},
 			Priority: node1.Priority + node2.Priority,
 		})
 	}
-	return newHuffmanTree(*queue.Pop().Value), nil
+	root := queue.Pop().Value
+	return huffmanTreeFromNode(*root), nil
 }
 
-func (t HuffmanTree) MarshalJSON() ([]byte, error) {
-	trueRoot := t.root.right // discard the hidden root
-	return json.Marshal(trueRoot)
-}
-
-func (t *HuffmanTree) UnmarshalJSON(data []byte) error {
-	root := huffmanNode{}
-	err := json.Unmarshal(data, &root)
-	if err != nil {
-		return err
+func newHuffmanTree() HuffmanTree {
+	return HuffmanTree{
+		Leaves:         make([]*huffmanLeaf, 0),
+		LeavesByCode:   make(map[codepoint]uint32),
+		LeavesBySymbol: make(map[byte]uint32),
 	}
-	*t = newHuffmanTree(root)
-	return nil
+}
+
+func huffmanTreeFromNode(root huffmanBuildingNode) HuffmanTree {
+	tree := newHuffmanTree()
+
+	// traverse tree to find the codepoint for each leaf
+	type stackItem struct {
+		node      *huffmanBuildingNode
+		accumCode []byte
+	}
+
+	// New trees have a "hidden" root that makes all valid codes start with 1
+	actualRoot := huffmanBuildingNode{left: nil, right: &root}
+	nodeStack := []stackItem{{&actualRoot, []byte{}}}
+
+	for len(nodeStack) != 0 {
+		item := nodeStack[len(nodeStack)-1]
+		nodeStack = nodeStack[:len(nodeStack)-1]
+
+		node := item.node
+		if node.left == nil && node.right == nil {
+			if len(item.accumCode) > codepointMaxLength {
+				panic("code too long")
+			}
+			var codept codepoint
+			for _, b := range item.accumCode {
+				codept = (codept << 1) + codepoint(b)
+			}
+			hcode := huffmanCode{Codepoint: codept, Length: len(item.accumCode)}
+			tree.appendLeaf(huffmanLeaf{Symbol: node.symbol, Code: hcode})
+			continue
+		}
+		if node.left != nil {
+			nodeStack = append(
+				nodeStack,
+				stackItem{node.left, append(slices.Clone(item.accumCode), 0)},
+			)
+		}
+		if node.right != nil {
+			// Don't need to clone accumcode again since this will be the only
+			// potential reference left to the original
+			nodeStack = append(nodeStack, stackItem{node.right, append(item.accumCode, 1)})
+		}
+	}
+	return tree
+}
+
+func (t *HuffmanTree) appendLeaf(leaf huffmanLeaf) {
+	t.LeavesByCode[leaf.Code.Codepoint] = uint32(len(t.Leaves))
+	t.LeavesBySymbol[leaf.Symbol] = uint32(len(t.Leaves))
+	t.Leaves = append(t.Leaves, &leaf)
 }
 
 func (t HuffmanTree) ExportJSON(w io.Writer) error {
@@ -300,8 +308,7 @@ func ImportHuffmanTreeJSON(r io.Reader) (HuffmanTree, error) {
 }
 
 func (t HuffmanTree) decode(codes []byte, out []byte) (used, written int, err error) {
-	node := t.root
-	if node == nil {
+	if len(t.LeavesByCode) == 0 {
 		return 0, 0, ErrEmptyTree
 	}
 	if len(codes) == 0 {
@@ -315,63 +322,71 @@ func (t HuffmanTree) decode(codes []byte, out []byte) (used, written int, err er
 		return 1, 0, ErrInvalidCode{0}
 	}
 
-	var bit uint8
+	var hcode huffmanCode
 	for i, code := range codes {
 		for bitN %= 8; bitN < 8; bitN++ {
+			var bit uint8
 			if (code & (1 << (8 - bitN - 1))) == 0 {
 				bit = 0
 			} else {
 				bit = 1
 			}
-			child, err := node.child(huffmanMovement(bit))
-			if err != nil {
-				if (err == ErrNoChild{huffmanMovement(bit)}) {
-					return used, written, ErrInvalidCode{code}
-				}
-				return used, written, err
+			hcode.Length++
+			if hcode.Length > codepointMaxLength {
+				return used, written, ErrInvalidCode{hcode.Codepoint}
 			}
-			node = child
-
-			if node.isLeaf() {
-				out[written] = node.symbol
-				written++
-				node = t.root
-
-				// if the rest of the byte is padding
-				if bitN < 8-1 && (code&((1<<(8-bitN-1))-1) == 0) {
-					if i == len(codes)-1 {
-						// valid padding, update and return
-						used = i + 1
-						return used, written, nil
-					}
-					// invalid padding
-					return used, written, ErrInvalidPadding
-				}
-				// only update used bytes when fully decoded
-				if bitN == 8-1 {
-					used = i + 1
-				} else {
-					used = i
-				}
-				// if output has no space left
-				if written == len(out) {
-					// clear used bits before returning
-					// TODO: don't mix input and output parameters
-					codes[i] = code & ((1 << (8 - bitN)) - 1)
-					return used, written, nil
-				}
+			hcode.Codepoint = (hcode.Codepoint << 1) + codepoint(bit)
+			leaf, ok := t.leaf(hcode.Codepoint)
+			if !ok {
+				continue
 			}
+			out[written] = leaf.Symbol
+			written++
+
+			// only update used bytes when fully decoded
+			if bitN == 8-1 {
+				used = i + 1
+			} else {
+				used = i
+			}
+			// if output has no space left
+			if written == len(out) {
+				// clear used bits before returning
+				// TODO: don't mix input and output parameters
+				codes[i] = code & ((1 << (8 - bitN)) - 1)
+				return used, written, nil
+			}
+
+			hcode = huffmanCode{}
 		}
 	}
 	return used, written, nil
 }
 
+func (t HuffmanTree) leaf(codept codepoint) (*huffmanLeaf, bool) {
+	index, ok := t.LeavesByCode[codept]
+	if !ok {
+		return nil, false
+	}
+	return t.Leaves[index], true
+}
+
 func (t HuffmanTree) symbolCode(symbol byte) (huffmanCode, error) {
-	leaf, ok := t.leaves[symbol]
+	index, ok := t.LeavesBySymbol[symbol]
 	if !ok {
 		return huffmanCode{}, fmt.Errorf("symbol 0x%x not present in tree", symbol)
 	}
-	return leaf.code, nil
+	return t.Leaves[index].Code, nil
+}
+
+type huffmanLeaf struct {
+	Symbol byte
+	Code   huffmanCode
+}
+
+type symbolCount struct {
+	Symbol byte
+	Count  int
 }
 
 const codepointMaxLength = 16
@@ -413,115 +428,11 @@ func packCodes(codes []huffmanCode) []byte {
 	return result
 }
 
-type huffmanMovement int
-
-const (
-	left  huffmanMovement = 0
-	right huffmanMovement = 1
-)
-
-// huffmanNode represents a node in a Huffman tree
-// Do not use this struct directly. Use newHuffmanInternalNode and newHuffmanLeaf instead,
-// as they ensure that the struct is correctly initialized.
-type huffmanNode struct {
-	left, right *huffmanNode
-	symbol      byte
-	code        huffmanCode
-}
-
-func newHuffmanInternalNode(left, right *huffmanNode) *huffmanNode {
-	return &huffmanNode{left: left, right: right}
-}
-
-func newHuffmanLeaf(symbol byte) *huffmanNode {
-	return &huffmanNode{symbol: symbol}
-}
-
-func (n *huffmanNode) isLeaf() bool {
-	return n.left == nil && n.right == nil
-}
-
-func (n huffmanNode) child(movement huffmanMovement) (*huffmanNode, error) {
-	var node *huffmanNode
-	switch movement {
-	case left:
-		node = n.left
-	case right:
-		node = n.right
-	default:
-		return nil, fmt.Errorf("invalid movement %v", movement)
-	}
-	if node == nil {
-		return nil, ErrNoChild{movement}
-	}
-	return node, nil
-}
-
-func (n huffmanNode) MarshalJSON() ([]byte, error) {
-	if n.isLeaf() {
-		code, err := json.Marshal(n.code)
-		if err != nil {
-			return nil, err
-		}
-		return []byte(fmt.Sprintf(`{"symbol":%d,"code":%s}`, n.symbol, code)), nil
-	}
-	buffer := bytes.Buffer{}
-	buffer.Write([]byte{'{'})
-	if n.left != nil {
-		buffer.WriteString(`"left":`)
-		nested, err := json.Marshal(n.left)
-		if err != nil {
-			return nil, err
-		}
-		buffer.Write(nested)
-	}
-	if n.right != nil {
-		if n.left != nil {
-			buffer.Write([]byte{','})
-		}
-		buffer.WriteString(`"right":`)
-		nested, err := json.Marshal(n.right)
-		if err != nil {
-			return nil, err
-		}
-		buffer.Write(nested)
-	}
-	buffer.Write([]byte{'}'})
-	return buffer.Bytes(), nil
-}
-
-func (n *huffmanNode) UnmarshalJSON(data []byte) error {
-	var node struct {
-		Symbol byte
-		Code   huffmanCode
-		Left   *huffmanNode
-		Right  *huffmanNode
-	}
-	err := json.Unmarshal(data, &node)
-	if err != nil {
-		return err
-	}
-	if node.Left != nil {
-		n.left = node.Left
-	}
-	if node.Right != nil {
-		n.right = node.Right
-	}
-	n.symbol = node.Symbol
-	n.code = node.Code
-	return nil
-}
-
-type symbolCount struct {
-	symbol byte
-	count  int
-}
-
 func (s symbolCount) String() string {
-	if unicode.IsSpace(rune(s.symbol)) {
-		return fmt.Sprintf("<space>:%d", s.count)
+	if unicode.IsSpace(rune(s.Symbol)) {
+		return fmt.Sprintf("<space>:%d", s.Count)
 	}
-	return fmt.Sprintf("%c:%d", s.symbol, s.count)
+	return fmt.Sprintf("%c:%d", s.Symbol, s.Count)
 }
 
 func symbolCounts(symbols []byte) []symbolCount {
@@ -534,7 +445,7 @@ func symbolCounts(symbols []byte) []symbolCount {
 	unique := make([]symbolCount, len(r))
 	i := 0
 	for sym, count := range r {
-		unique[i] = symbolCount{symbol: sym, count: count}
+		unique[i] = symbolCount{Symbol: sym, Count: count}
 		i++
 	}
 	return unique
