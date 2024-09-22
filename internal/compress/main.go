@@ -185,6 +185,9 @@ func newHuffmanTree(root huffmanNode) HuffmanTree {
 				codept = (codept << 1) + codepoint(b)
 			}
 			node.code = huffmanCode{Codepoint: codept, Length: len(item.accumCode)}
+			if len(item.accumCode) > codepointMaxLength {
+				panic("code too long")
+			}
 			continue
 		}
 		if node.left != nil {
