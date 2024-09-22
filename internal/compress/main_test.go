@@ -155,7 +155,7 @@ func assertHuffmanDecoding(
 	expectedDecoded []byte,
 ) {
 	t.Helper()
-	out := make([]byte, codeBufferBits)
+	out := make([]byte, len(expectedDecoded))
 	used, written, err := tree.decode(codes, out)
 	if err != expectedErr {
 		t.Fatalf("unexpected error: %v", err)

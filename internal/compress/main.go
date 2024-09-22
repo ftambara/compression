@@ -15,9 +15,6 @@ import (
 )
 
 const (
-	// codeBufferBits defines number of bits in code processing buffers
-	codeBufferBits = 64
-
 	// encoder/decoder buffers
 	decoderBufferLen = 8 * 1024
 	encoderBufferLen = 8 * 1024
