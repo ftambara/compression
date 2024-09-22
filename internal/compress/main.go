@@ -62,9 +62,9 @@ func (hr *HuffmanReader) Read(p []byte) (int, error) {
 	totalN := 0
 
 	for {
-		n, err := hr.r.Read(readbuff[readbuffStart:])
-		if err != nil && err != io.EOF {
-			return totalN, err
+		n, readErr := hr.r.Read(readbuff[readbuffStart:])
+		if readErr != nil && readErr != io.EOF {
+			return totalN, readErr
 		}
 		n += readbuffStart
 
@@ -74,20 +74,19 @@ func (hr *HuffmanReader) Read(p []byte) (int, error) {
 		if totalN == len(p) {
 			// No more space left in output buffer, save pending
 			hr.pending = readbuff[used:]
-			break
+			return totalN, nil
 		}
 		if err != nil {
 			return totalN, err
 		}
-		if err == io.EOF {
-			break
+		if readErr == io.EOF {
+			return totalN, io.EOF
 		}
 		if used < n {
 			copy(readbuff, readbuff[used:n])
 			readbuffStart = n - used
 		}
 	}
-	return totalN, nil
 }
 
 type HuffmanWriter struct {
