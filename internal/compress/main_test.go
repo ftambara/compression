@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"maps"
+	"os"
 	"slices"
 	"testing"
 )
@@ -438,18 +439,28 @@ func TestHuffmanEncodeDecode(t *testing.T) {
 }
 
 func TestExportHuffmanTreeJSON(t *testing.T) {
-	buffer := &bytes.Buffer{}
-	DefaultTree.ExportJSON(buffer)
+	buffer := bytes.Buffer{}
+	DefaultTree.ExportJSON(&buffer)
 
-	expected := `{"left":{"symbol":97,"code":{"Codepoint":2,"Length":2}},"right":{"left":{"symbol":98,"code":{"Codepoint":6,"Length":3}},"right":{"symbol":99,"code":{"Codepoint":7,"Length":3}}}}`
-	if buffer.String() != expected+"\n" {
+	f, err := os.Open("testdata/default-tree.json")
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+	expected, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+	if buffer.String() != string(expected) {
 		t.Errorf("expected \n\t%v\ngot \n\t%v", expected, buffer.String())
 	}
 }
 
 func TestImportHuffmanTreeJSON(t *testing.T) {
-	exportedTree := `{"left":{"symbol":97,"code":{"Codepoint":2,"Length":2}},"right":{"left":{"symbol":98,"code":{"Codepoint":6,"Length":3}},"right":{"symbol":99,"code":{"Codepoint":7,"Length":3}}}}`
-	tree, err := ImportHuffmanTreeJSON(bytes.NewBufferString(exportedTree))
+	f, err := os.Open("testdata/default-tree.json")
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+	tree, err := ImportHuffmanTreeJSON(f)
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
