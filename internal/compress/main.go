@@ -127,7 +127,12 @@ func (hw *HuffmanWriter) Write(message []byte) (int, error) {
 		codes = append(codes, code)
 	}
 
-	return hw.w.Write(packCodes(codes))
+	packed := packCodes(codes)
+	_, err := hw.w.Write(packed)
+	if err != nil {
+		return 0, err
+	}
+	return len(message), nil
 }
 
 type ErrInvalidCode struct {
