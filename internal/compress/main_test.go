@@ -371,33 +371,32 @@ func Test_decodeHuffman(t *testing.T) {
 	}
 }
 
-func assertHuffmanEncoding(
+func assertHuffmanWrite(
 	t *testing.T,
 	tree HuffmanTree,
 	message []byte,
 	expectedCode []byte,
 ) {
 	t.Helper()
-	buffer := bytes.NewBuffer(message)
-	he := NewHuffmanEncoder(buffer)
-	he.SetTree(&tree)
-	out := make([]byte, len(expectedCode))
-	n, err := he.Read(out)
-	if err != nil && err != io.EOF {
+	buffer := bytes.Buffer{}
+	hw := NewHuffmanWriter(&buffer)
+	hw.SetTree(&tree)
+	n, err := hw.Write(message)
+	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
 	if n != len(expectedCode) {
 		t.Fatalf("expected n = %v, got %v", len(expectedCode), n)
 	}
-	if !slices.Equal(out[:n], expectedCode) {
-		t.Errorf("expected %v, got %v", expectedCode, out[:n])
+	if !slices.Equal(buffer.Bytes(), expectedCode) {
+		t.Errorf("expected %v, got %v", expectedCode, buffer.Bytes())
 	}
 }
 
-func TestHuffmanEncoder(t *testing.T) {
-	assertHuffmanEncoding(t, DefaultTree, []byte("cab"), []byte{0b11110110})
-	assertHuffmanEncoding(t, DefaultTree, []byte("abbac"), []byte{0b10110110, 0b10111000})
-	assertHuffmanEncoding(t, DefaultTree, []byte{}, []byte{})
+func TestHuffmanWriter(t *testing.T) {
+	assertHuffmanWrite(t, DefaultTree, []byte("cab"), []byte{0b11110110})
+	assertHuffmanWrite(t, DefaultTree, []byte("abbac"), []byte{0b10110110, 0b10111000})
+	assertHuffmanWrite(t, DefaultTree, []byte{}, []byte{})
 }
 
 func TestHuffmanEncodeDecode(t *testing.T) {
@@ -413,18 +412,18 @@ func TestHuffmanEncodeDecode(t *testing.T) {
 
 	for _, tc := range table {
 		t.Run(tc.name, func(t *testing.T) {
-			encoder := NewHuffmanEncoder(bytes.NewBuffer(tc.message))
-			encoder.SetTree(&DefaultTree)
-			encoded := make([]byte, len(tc.message)*codepointMaxLength)
-			n, err := encoder.Read(encoded)
-			if err != nil && err != io.EOF {
+			encoded := bytes.Buffer{}
+			hw := NewHuffmanWriter(&encoded)
+			hw.SetTree(&DefaultTree)
+			_, err := hw.Write(tc.message)
+			if err != nil {
 				t.Fatalf("unexpected error %v", err)
 			}
 
-			decoder := NewHuffmanDecoder(bytes.NewBuffer(encoded[:n]))
+			decoder := NewHuffmanDecoder(&encoded)
 			decoder.SetTree(&DefaultTree)
 			decoded := make([]byte, len(tc.message))
-			n, err = decoder.Read(decoded)
+			n, err := decoder.Read(decoded)
 			if err != nil && err != io.EOF {
 				t.Fatalf("unexpected error %v", err)
 			}

@@ -86,55 +86,45 @@ func (hd *HuffmanDecoder) Read(buffer []byte) (int, error) {
 	return totalN, nil
 }
 
-type HuffmanEncoder struct {
-	rd   io.Reader
+type HuffmanWriter struct {
+	w    io.Writer
 	tree *HuffmanTree
 }
 
-func NewHuffmanEncoder(rd io.Reader) *HuffmanEncoder {
-	return &HuffmanEncoder{
-		rd:   rd,
+func NewHuffmanWriter(w io.Writer) *HuffmanWriter {
+	return &HuffmanWriter{
+		w:    w,
 		tree: nil,
 	}
 }
 
-func (he *HuffmanEncoder) SetTree(t *HuffmanTree) {
-	he.tree = t
+func (hw *HuffmanWriter) SetTree(t *HuffmanTree) {
+	hw.tree = t
 }
 
-// Read reads symbols from he.rd and writes resulting encoded bytes to buffer
-func (he *HuffmanEncoder) Read(buffer []byte) (int, error) {
-	if he.tree == nil {
+// Write writes an encoded version of message to the underlying writer
+//
+// The encoded message is written in a packed format,
+// not suitable for random access.
+//
+// Padding (zero bits) are added only at the last byte,
+// when w's EOF is reached.
+func (hw *HuffmanWriter) Write(message []byte) (int, error) {
+	if hw.tree == nil {
 		return 0, errors.New("on-the-fly tree generation not implemented yet")
 	}
 
-	readbuff := make([]byte, encoderBufferLen)
 	codes := make([]huffmanCode, 0, encoderBufferLen)
-	totalN := 0
 
-	for {
-		n, err := he.rd.Read(readbuff)
-		if err != nil && err != io.EOF {
-			return totalN, err
+	for _, symbol := range message {
+		code, err := hw.tree.symbolCode(symbol)
+		if err != nil {
+			return 0, err
 		}
-
-		for _, symbol := range readbuff[:n] {
-			code, err := he.tree.symbolCode(symbol)
-			if err != nil {
-				return totalN, err
-			}
-			codes = append(codes, code)
-		}
-		packed := packCodes(codes)
-		copy(buffer[totalN:], packed)
-		totalN += len(packed)
-		codes = codes[:0] // clear codes without freeing memory
-
-		if err == io.EOF {
-			break
-		}
+		codes = append(codes, code)
 	}
-	return totalN, nil
+
+	return hw.w.Write(packCodes(codes))
 }
 
 type ErrInvalidCode struct {
