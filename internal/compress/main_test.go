@@ -203,14 +203,14 @@ var DefaultTree = newHuffmanTree(
 	),
 )
 
-func TestHuffmanDecoder(t *testing.T) {
+func TestHuffmanReader(t *testing.T) {
 	code := []byte{0b10101100}
 	buffer := bytes.NewBuffer(code)
-	hd := NewHuffmanDecoder(buffer)
-	hd.SetTree(&DefaultTree)
+	hr := NewHuffmanReader(buffer)
+	hr.SetTree(&DefaultTree)
 	expectedMessage := []byte("aab")
 	out := make([]byte, len(expectedMessage))
-	n, err := hd.Read(out)
+	n, err := hr.Read(out)
 	if err != nil && err != io.EOF {
 		t.Fatalf("unexpected error %v", err)
 	}
@@ -223,11 +223,11 @@ func TestHuffmanDecoder(t *testing.T) {
 
 	code = []byte{0b10101111, 0b10111000}
 	buffer = bytes.NewBuffer(code)
-	hd = NewHuffmanDecoder(buffer)
-	hd.SetTree(&DefaultTree)
+	hr = NewHuffmanReader(buffer)
+	hr.SetTree(&DefaultTree)
 	expectedMessage = []byte("aacbc")
 	out = make([]byte, len(expectedMessage))
-	n, err = hd.Read(out)
+	n, err = hr.Read(out)
 	if err != nil && err != io.EOF {
 		t.Fatalf("unexpected error %v", err)
 	}
@@ -420,10 +420,10 @@ func TestHuffmanEncodeDecode(t *testing.T) {
 				t.Fatalf("unexpected error %v", err)
 			}
 
-			decoder := NewHuffmanDecoder(&encoded)
-			decoder.SetTree(&DefaultTree)
+			hr := NewHuffmanReader(&encoded)
+			hr.SetTree(&DefaultTree)
 			decoded := make([]byte, len(tc.message))
-			n, err := decoder.Read(decoded)
+			n, err := hr.Read(decoded)
 			if err != nil && err != io.EOF {
 				t.Fatalf("unexpected error %v", err)
 			}

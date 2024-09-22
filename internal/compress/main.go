@@ -26,30 +26,33 @@ const (
 	maxSymbols = 10 * 1024
 )
 
-type HuffmanDecoder struct {
-	rd      io.Reader
+type HuffmanReader struct {
+	r       io.Reader
 	tree    *HuffmanTree
 	pending []byte
 }
 
-func NewHuffmanDecoder(rd io.Reader) *HuffmanDecoder {
-	return &HuffmanDecoder{
-		rd:      rd,
+func NewHuffmanReader(rd io.Reader) *HuffmanReader {
+	return &HuffmanReader{
+		r:       rd,
 		tree:    nil,
 		pending: make([]byte, 0, decoderBufferLen),
 	}
 }
 
-func (hd *HuffmanDecoder) SetTree(t *HuffmanTree) {
-	hd.tree = t
+func (hr *HuffmanReader) SetTree(t *HuffmanTree) {
+	hr.tree = t
 }
 
-// Read reads packed codepoints from hd.rd and writes decoded symbols to buffer
-func (hd *HuffmanDecoder) Read(buffer []byte) (int, error) {
-	if hd.tree == nil {
+// Read reads packed codepoints from hr.r and writes decoded symbols to buffer
+func (hr *HuffmanReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if hr.tree == nil {
 		return 0, errors.New("on-the-fly tree generation not implemented yet")
 	}
-	if len(hd.pending) > 0 {
+	if len(hr.pending) > 0 {
 		return 0, errors.New("must implement processing of pending bytes")
 	}
 
@@ -58,18 +61,18 @@ func (hd *HuffmanDecoder) Read(buffer []byte) (int, error) {
 	totalN := 0
 
 	for {
-		n, err := hd.rd.Read(readbuff[readbuffStart:])
+		n, err := hr.r.Read(readbuff[readbuffStart:])
 		if err != nil && err != io.EOF {
 			return totalN, err
 		}
 		n += readbuffStart
 
 		// Decode
-		used, written, err := hd.tree.decode(readbuff[:n], buffer[totalN:])
+		used, written, err := hr.tree.decode(readbuff[:n], p[totalN:])
 		totalN += written
-		if totalN == len(buffer) {
+		if totalN == len(p) {
 			// No more space left in output buffer, save pending
-			hd.pending = readbuff[used:]
+			hr.pending = readbuff[used:]
 			break
 		}
 		if err != nil {
