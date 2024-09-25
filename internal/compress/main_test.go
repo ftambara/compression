@@ -215,6 +215,28 @@ func TestHuffmanReader(t *testing.T) {
 	if !slices.Equal(out[:n], expectedMessage) {
 		t.Errorf("expected %v, got %v", expectedMessage, out[:n])
 	}
+
+	// test reading when the buffer is too small
+	code = []byte{0b10101111, 0b10111000}
+	buffer = bytes.NewBuffer(code)
+	hr = NewHuffmanReader(buffer)
+	hr.SetTree(&DefaultTree)
+	out = make([]byte, 2)
+	n, err = hr.Read(out)
+	if err != nil {
+		t.Fatalf("unexpected error %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("expected n = 2, got %v", n)
+	}
+	expectedMessage = []byte("aa")
+	if !slices.Equal(out, expectedMessage) {
+		t.Errorf("expected %v, got %v", expectedMessage, out)
+	}
+	expectedPending := []byte{0b00001111, 0b10111000}
+	if !bytes.Equal(hr.pending[:n], expectedPending) {
+		t.Errorf("expected %v, got %v", expectedPending, hr.pending[:n])
+	}
 }
 
 // alignToLeft8 shifts x to the left until the most significant bit is 1
