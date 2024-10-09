@@ -2,6 +2,7 @@ package compress
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"maps"
 	"math"
@@ -10,47 +11,65 @@ import (
 	"testing"
 )
 
-func assertSliceEqualSort[T comparable](t *testing.T, cmp func(a, b T) int, expected, got []T) {
+func assertSliceEqualUnordered[T comparable](t *testing.T, expected, got []T) {
 	t.Helper()
-	slices.SortFunc(expected, cmp)
-	slices.SortFunc(got, cmp)
-	if !slices.Equal(expected, got) {
+	if len(expected) != len(got) {
+		t.Fatalf("expected %v, got %v", expected, got)
+	}
+	// transform the slices into maps and compare them
+	expectedMap := make(map[T]bool, len(expected))
+	for _, v := range expected {
+		expectedMap[v] = true
+	}
+	gotMap := make(map[T]bool, len(got))
+	for _, v := range got {
+		gotMap[v] = true
+	}
+	if !maps.Equal(expectedMap, gotMap) {
 		t.Errorf("expected %v, got %v", expected, got)
 	}
 }
 
 func Test_symbolCounts(t *testing.T) {
-	cmp := func(a, b symbolCount) int {
-		if a.Count == b.Count {
-			return int(a.Symbol) - int(b.Symbol)
-		}
-		return a.Count - b.Count
+	type testCase struct {
+		input    []byte
+		expected []symbolCount
 	}
-
-	symbols := []byte("abc")
-	counts := symbolCounts(symbols)
-	expected := []symbolCount{
-		{'a', 1},
-		{'b', 1},
-		{'c', 1},
+	table := []testCase{
+		{
+			input:    []byte{},
+			expected: []symbolCount{},
+		},
+		{
+			input:    []byte("a"),
+			expected: []symbolCount{{'a', 1}},
+		},
+		{
+			input:    []byte("abac"),
+			expected: []symbolCount{{'a', 2}, {'b', 1}, {'c', 1}},
+		},
+		{
+			input: []byte("Daniele De Rossi"),
+			expected: []symbolCount{
+				{'D', 2},
+				{'a', 1},
+				{'n', 1},
+				{'i', 2},
+				{'e', 3},
+				{'l', 1},
+				{' ', 2},
+				{'R', 1},
+				{'o', 1},
+				{'s', 2},
+			},
+		},
 	}
-	assertSliceEqualSort(t, cmp, expected, counts)
-
-	symbols = []byte("Daniele De Rossi")
-	counts = symbolCounts(symbols)
-	expected = []symbolCount{
-		{'D', 2},
-		{'a', 1},
-		{'n', 1},
-		{'i', 2},
-		{'e', 3},
-		{'l', 1},
-		{' ', 2},
-		{'R', 1},
-		{'o', 1},
-		{'s', 2},
+	for _, tc := range table {
+		t.Run(fmt.Sprintf("input: '%q`", tc.input), func(t *testing.T) {
+			counts := symbolCounts(tc.input)
+			assertSliceEqualUnordered(t, tc.expected, counts)
+		})
 	}
-	assertSliceEqualSort(t, cmp, expected, counts)
 }
 
 func assertHuffmanTreeEqual(t *testing.T, expected, actual HuffmanTree) {
