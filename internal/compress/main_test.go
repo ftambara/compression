@@ -201,61 +201,87 @@ var DefaultTree = huffmanTreeFromNode(
 )
 
 func TestHuffmanReader(t *testing.T) {
-	code := []byte{0b10101100}
-	buffer := bytes.NewBuffer(code)
-	hr := NewHuffmanReader(buffer)
-	hr.SetTree(&DefaultTree)
-	expectedMessage := []byte("aab")
-	out := make([]byte, len(expectedMessage))
-	n, err := hr.Read(out)
-	if err != nil && err != io.EOF {
-		t.Fatalf("unexpected error %v", err)
-	}
-	if n != len(expectedMessage) {
-		t.Fatalf("expected n = %v, got %v", len(expectedMessage), n)
-	}
-	if !slices.Equal(out[:n], expectedMessage) {
-		t.Errorf("expected %v, got %v", expectedMessage, out[:n])
+	testCases := []struct {
+		name           string
+		input          []byte
+		expectedOutput []byte
+		outBufSize     int
+		expectedError  error
+	}{
+		{
+			name:           "empty input",
+			input:          []byte{},
+			expectedOutput: []byte{},
+			outBufSize:     10,
+			expectedError:  io.EOF,
+		},
+		{
+			name:           "single character",
+			input:          []byte{0b10},
+			expectedOutput: []byte{'a'},
+			outBufSize:     10,
+			expectedError:  io.EOF,
+		},
+		{
+			name:           "multiple characters",
+			input:          []byte{0b10, 0b110},
+			expectedOutput: []byte("ab"),
+			outBufSize:     10,
+			expectedError:  io.EOF,
+		},
+		{
+			name:           "small output buffer",
+			input:          []byte{0b10, 0b110},
+			expectedOutput: []byte{'a'},
+			outBufSize:     1,
+			expectedError:  nil,
+		},
+		{
+			name:           "incomplete code",
+			input:          []byte{0b10, 0b11011111},
+			expectedOutput: []byte("abc"),
+			outBufSize:     10,
+			expectedError:  ErrInvalidCode{codept: 0b11},
+		},
 	}
 
-	code = []byte{0b10101111, 0b10111000}
-	buffer = bytes.NewBuffer(code)
-	hr = NewHuffmanReader(buffer)
-	hr.SetTree(&DefaultTree)
-	expectedMessage = []byte("aacbc")
-	out = make([]byte, len(expectedMessage))
-	n, err = hr.Read(out)
-	if err != nil && err != io.EOF {
-		t.Fatalf("unexpected error %v", err)
-	}
-	if n != len(expectedMessage) {
-		t.Fatalf("expected n = %v, got %v", len(expectedMessage), n)
-	}
-	if !slices.Equal(out[:n], expectedMessage) {
-		t.Errorf("expected %v, got %v", expectedMessage, out[:n])
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hr := NewHuffmanReader(bytes.NewBuffer(tc.input))
+			hr.SetTree(&DefaultTree)
+			out := make([]byte, tc.outBufSize)
+
+			n, err := hr.Read(out)
+			if err != tc.expectedError {
+				t.Fatalf("expected error %v, got %v", tc.expectedError, err)
+			}
+			if n != len(tc.expectedOutput) {
+				t.Fatalf("expected n = %v, got %v", len(tc.expectedOutput), n)
+			}
+			if !slices.Equal(out[:n], tc.expectedOutput) {
+				t.Errorf("expected %v, got %v", tc.expectedOutput, out[:n])
+			}
+		})
 	}
 
-	// test reading when the buffer is too small
-	code = []byte{0b10101111, 0b10111000}
-	buffer = bytes.NewBuffer(code)
-	hr = NewHuffmanReader(buffer)
-	hr.SetTree(&DefaultTree)
-	out = make([]byte, 2)
-	n, err = hr.Read(out)
-	if err != nil {
-		t.Fatalf("unexpected error %v", err)
-	}
-	if n != 2 {
-		t.Fatalf("expected n = 2, got %v", n)
-	}
-	expectedMessage = []byte("aa")
-	if !slices.Equal(out, expectedMessage) {
-		t.Errorf("expected %v, got %v", expectedMessage, out)
-	}
-	expectedPending := []byte{0b00001111, 0b10111000}
-	if !bytes.Equal(hr.pending[:n], expectedPending) {
-		t.Errorf("expected %v, got %v", expectedPending, hr.pending[:n])
-	}
+	t.Run("multiple reads", func(t *testing.T) {
+		hr := NewHuffmanReader(bytes.NewBuffer([]byte{0b10, 0b11010111}))
+		hr.SetTree(&DefaultTree)
+		out := make([]byte, 1)
+		outBuff := bytes.Buffer{}
+		expectedOutput := []byte("abac")
+		var err error
+		var n int
+		for n, err = hr.Read(out); err == nil; n, err = hr.Read(out) {
+			outBuff.Write(out[:n])
+		}
+		if err != io.EOF {
+			t.Fatalf("expected EOF, got %v", err)
+		}
+		if outBuff.String() != string(expectedOutput) {
+			t.Errorf("expected %v, got %v", expectedOutput, outBuff.String())
+		}
+	})
 }
 
 // alignToLeft8 shifts x to the left until the most significant bit is 1

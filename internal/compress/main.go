@@ -24,16 +24,17 @@ const (
 )
 
 type HuffmanReader struct {
-	r       io.Reader
-	tree    *HuffmanTree
-	pending []byte
+	r           io.Reader
+	tree        *HuffmanTree
+	readBuff    []byte
+	readBuffEnd int
 }
 
 func NewHuffmanReader(rd io.Reader) *HuffmanReader {
 	return &HuffmanReader{
-		r:       rd,
-		tree:    nil,
-		pending: make([]byte, 0, decoderBufferLen),
+		r:        rd,
+		tree:     nil,
+		readBuff: make([]byte, decoderBufferLen),
 	}
 }
 
@@ -43,46 +44,59 @@ func (hr *HuffmanReader) SetTree(t *HuffmanTree) {
 
 // Read reads packed codepoints from hr.r and writes decoded symbols to buffer
 func (hr *HuffmanReader) Read(p []byte) (int, error) {
-	if len(p) == 0 {
-		return 0, nil
-	}
 	if hr.tree == nil {
 		return 0, errors.New("on-the-fly tree generation not implemented yet")
 	}
-	if len(hr.pending) > 0 {
-		pending := hr.pending
-		hr.pending = pending[:0]
-		hr.Read(pending)
-	}
-
-	readbuff := make([]byte, decoderBufferLen)
-	readbuffStart := 0
-	totalN := 0
+	written := 0
 
 	for {
-		n, readErr := hr.r.Read(readbuff[readbuffStart:])
+		readBytes, readErr := hr.r.Read(hr.readBuff[hr.readBuffEnd:])
 		if readErr != nil && readErr != io.EOF {
-			return totalN, readErr
+			return written, readErr
 		}
-		n += readbuffStart
+		readLen := hr.readBuffEnd + readBytes
+		if readLen == 0 {
+			return written, readErr
+		}
 
 		// Decode
-		used, written, err := hr.tree.decode(readbuff[:n], p[totalN:])
-		totalN += written
-		if totalN == len(p) {
-			// No more space left in output buffer, save pending
-			hr.pending = readbuff[used:]
-			return totalN, nil
-		}
+		usedBits, writtenBytes, err := hr.tree.decode(hr.readBuff[:readLen], p[written:])
 		if err != nil {
-			return totalN, err
+			return written, err
+		}
+		if usedBits == 0 {
+			mask := byte(1<<(8-usedBits%8) - 1)
+			invalidCodept := codepoint(hr.readBuff[hr.readBuffEnd] & mask)
+			return written, ErrInvalidCode{codept: invalidCodept}
+		}
+		written += writtenBytes
+		fullyUsedBytes := usedBits / 8
+
+		if usedBits%8 != 0 {
+			// Clear used bits in partially read byte
+			// e.g. if buffer = 0b10101100, usedBits = 4, then mask = 0b00001111
+			mask := byte(1<<(8-usedBits%8) - 1)
+			hr.readBuff[fullyUsedBytes] &= mask
+		}
+
+		if fullyUsedBytes < readLen {
+			// Need to keep unused bits for next read
+			copy(hr.readBuff, hr.readBuff[fullyUsedBytes:readLen])
+			hr.readBuffEnd = readLen - fullyUsedBytes
+		} else {
+			hr.readBuffEnd = 0
+		}
+
+		if written == len(p) {
+			return written, nil
 		}
 		if readErr == io.EOF {
-			return totalN, io.EOF
-		}
-		if used < n {
-			copy(readbuff, readbuff[used:n])
-			readbuffStart = n - used
+			if fullyUsedBytes < readLen {
+				mask := byte(1<<(8-usedBits%8) - 1)
+				invalidCodept := codepoint(hr.readBuff[fullyUsedBytes] & mask)
+				return written, ErrInvalidCode{codept: invalidCodept}
+			}
+			return written, readErr
 		}
 	}
 }
@@ -304,7 +318,7 @@ func ImportHuffmanTreeJSON(r io.Reader) (HuffmanTree, error) {
 	return t, err
 }
 
-func (t HuffmanTree) decode(codes []byte, out []byte) (used, written int, err error) {
+func (t HuffmanTree) decode(codes []byte, out []byte) (usedBits, writtenBytes int, err error) {
 	if len(t.LeavesByCode) == 0 {
 		return 0, 0, ErrEmptyTree
 	}
@@ -314,6 +328,10 @@ func (t HuffmanTree) decode(codes []byte, out []byte) (used, written int, err er
 
 	// Skip leading zeros
 	bitN := bits.LeadingZeros8(codes[0])
+	if bitN == 8 {
+		return 8, 0, nil
+	}
+	usedBits += bitN
 
 	if (codes[0] & (1 << (8 - bitN - 1))) == 0 {
 		return 1, 0, ErrInvalidCode{0}
@@ -330,34 +348,28 @@ func (t HuffmanTree) decode(codes []byte, out []byte) (used, written int, err er
 			}
 			hcode.Length++
 			if hcode.Length > codepointMaxLength {
-				return used, written, ErrInvalidCode{hcode.Codepoint}
+				return usedBits, writtenBytes, ErrInvalidCode{hcode.Codepoint}
 			}
 			hcode.Codepoint = (hcode.Codepoint << 1) + codepoint(bit)
 			leaf, ok := t.leaf(hcode.Codepoint)
 			if !ok {
 				continue
 			}
-			out[written] = leaf.Symbol
-			written++
+			// Only update usedBits when a sympol is decoded
+			usedBits = 8*i + bitN + 1
 
-			// only update used bytes when fully decoded
-			if bitN == 8-1 {
-				used = i + 1
-			} else {
-				used = i
-			}
+			out[writtenBytes] = leaf.Symbol
+			writtenBytes++
+
 			// if output has no space left
-			if written == len(out) {
-				// clear used bits before returning
-				// TODO: don't mix input and output parameters
-				codes[i] = code & ((1 << (8 - bitN)) - 1)
-				return used, written, nil
+			if writtenBytes == len(out) {
+				return usedBits, writtenBytes, nil
 			}
 
 			hcode = huffmanCode{}
 		}
 	}
-	return used, written, nil
+	return usedBits, writtenBytes, nil
 }
 
 func (t HuffmanTree) leaf(codept codepoint) (*huffmanLeaf, bool) {
