@@ -170,19 +170,40 @@ func TestBuildHuffmanTree(t *testing.T) {
 }
 
 func TestBuildUniversalHuffmanTree(t *testing.T) {
-	input := bytes.NewBufferString("")
-	_, err := BuildUniversalHuffmanTree(input)
-	if err != nil {
-		t.Fatalf("unexpected error %v", err)
+	testCases := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "empty input",
+			input: "",
+		},
+		{
+			name:  "single character",
+			input: "A",
+		},
+		{
+			name:  "multiple characters",
+			input: "AAABBAC",
+		},
 	}
-
-	input = bytes.NewBufferString("ABAC")
-	tree, err := BuildUniversalHuffmanTree(input)
-	if err != nil {
-		t.Fatalf("unexpected error %v", err)
-	}
-	if len(tree.LeavesBySymbol) != math.MaxUint8+1 {
-		t.Errorf("expected %v leaves, got %v", math.MaxUint8, len(tree.LeavesBySymbol))
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tree, err := BuildUniversalHuffmanTree(bytes.NewBufferString(tc.input))
+			if err != nil {
+				t.Fatalf("unexpected error %v", err)
+			}
+			expectedLeafCount := math.MaxUint8 + 1
+			if len(tree.LeavesBySymbol) != expectedLeafCount {
+				t.Errorf("expected %v leaves, got %v", expectedLeafCount, len(tree.LeavesBySymbol))
+			}
+			// Check that all possible byte values are present in the tree
+			for i := 0; i < expectedLeafCount; i++ {
+				if _, ok := tree.LeavesBySymbol[byte(i)]; !ok {
+					t.Errorf("symbol %d not present in tree", i)
+				}
+			}
+		})
 	}
 }
 
