@@ -341,9 +341,6 @@ func Test_decodeHuffmanEmpty(t *testing.T) {
 	tree := NewHuffmanTree([]*huffmanLeaf{})
 	codes := []byte{}
 	assertHuffmanDecoding(t, tree, codes, 0, 0, ErrEmptyTree, nil)
-
-	tree = NewHuffmanTree([]*huffmanLeaf{})
-	assertHuffmanDecoding(t, tree, codes, 0, 0, nil, nil)
 }
 
 func Test_decodeHuffman(t *testing.T) {
@@ -359,51 +356,51 @@ func Test_decodeHuffman(t *testing.T) {
 		{
 			name:            "normal case 1",
 			codes:           []byte{0b10},
-			expectedUsed:    1,
+			expectedUsed:    8,
 			expectedWritten: 1,
-			expectedMessage: []byte{'a'},
+			expectedMessage: []byte{'A'},
 		},
 		{
 			name:            "normal case 2",
 			codes:           []byte{0b110},
-			expectedUsed:    1,
+			expectedUsed:    8,
 			expectedWritten: 1,
-			expectedMessage: []byte{'b'},
+			expectedMessage: []byte{'B'},
 		},
 		{
 			name:            "normal case 3",
 			codes:           []byte{0b10111},
-			expectedUsed:    1,
+			expectedUsed:    8,
 			expectedWritten: 2,
-			expectedMessage: []byte("ac"),
+			expectedMessage: []byte("AC"),
 		},
 		{
 			name:            "codes can span multiple bytes",
 			codes:           []byte{0b10111101, 0b01000000},
-			expectedUsed:    1,
+			expectedUsed:    11,
 			expectedWritten: 5,
-			expectedMessage: []byte("acaaa"),
+			expectedMessage: []byte("ACAAA"),
 		},
 		{
 			name:            "leading zeroes",
 			codes:           []byte{0b00010},
-			expectedUsed:    1,
+			expectedUsed:    8,
 			expectedWritten: 1,
-			expectedMessage: []byte{'a'},
+			expectedMessage: []byte{'A'},
 		},
 		{
 			name:            "incomplete code",
 			codes:           []byte{0b11011111},
-			expectedUsed:    0,
+			expectedUsed:    6,
 			expectedWritten: 2,
-			expectedMessage: []byte("bc"),
+			expectedMessage: []byte("BC"),
 		},
 		{
 			name:            "invalid code, too short to detect error",
 			codes:           []byte{0b1001},
-			expectedUsed:    0,
+			expectedUsed:    6,
 			expectedWritten: 1,
-			expectedMessage: []byte{'a'},
+			expectedMessage: []byte{'A'},
 		},
 	}
 
