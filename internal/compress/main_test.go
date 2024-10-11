@@ -235,9 +235,9 @@ func assertHuffmanDecoding(
 
 var DefaultTree = NewHuffmanTree(
 	[]*huffmanLeaf{
-		{Symbol: 'a', Code: huffmanCode{Codepoint: 0b1, Length: 1}},
-		{Symbol: 'b', Code: huffmanCode{Codepoint: 0b10, Length: 2}},
-		{Symbol: 'c', Code: huffmanCode{Codepoint: 0b11, Length: 2}},
+		{Symbol: 'A', Code: huffmanCode{Codepoint: 0b10, Length: 2}},
+		{Symbol: 'B', Code: huffmanCode{Codepoint: 0b110, Length: 3}},
+		{Symbol: 'C', Code: huffmanCode{Codepoint: 0b111, Length: 3}},
 	},
 )
 
@@ -259,28 +259,28 @@ func TestHuffmanReader(t *testing.T) {
 		{
 			name:           "single character",
 			input:          []byte{0b10},
-			expectedOutput: []byte{'a'},
+			expectedOutput: []byte{'A'},
 			outBufSize:     10,
 			expectedError:  io.EOF,
 		},
 		{
 			name:           "multiple characters",
 			input:          []byte{0b10, 0b110},
-			expectedOutput: []byte("ab"),
+			expectedOutput: []byte("AB"),
 			outBufSize:     10,
 			expectedError:  io.EOF,
 		},
 		{
 			name:           "small output buffer",
 			input:          []byte{0b10, 0b110},
-			expectedOutput: []byte{'a'},
+			expectedOutput: []byte{'A'},
 			outBufSize:     1,
 			expectedError:  nil,
 		},
 		{
 			name:           "incomplete code",
 			input:          []byte{0b10, 0b11011111},
-			expectedOutput: []byte("abc"),
+			expectedOutput: []byte("ABC"),
 			outBufSize:     10,
 			expectedError:  ErrInvalidCode{codept: 0b11},
 		},
@@ -310,7 +310,7 @@ func TestHuffmanReader(t *testing.T) {
 		hr.SetTree(&DefaultTree)
 		out := make([]byte, 1)
 		outBuff := bytes.Buffer{}
-		expectedOutput := []byte("abac")
+		expectedOutput := []byte("ABAC")
 		var err error
 		var n int
 		for n, err = hr.Read(out); err == nil; n, err = hr.Read(out) {
@@ -451,8 +451,8 @@ func TestHuffmanWriter(t *testing.T) {
 		expectedCode []byte
 	}{
 		{"empty message", []byte{}, []byte{}},
-		{"single character", []byte{'a'}, []byte{alignToLeft8(0b10)}},
-		{"multiple characters", []byte("abbac"), []byte{0b10110110, 0b10111000}},
+		{"single character", []byte{'A'}, []byte{alignToLeft8(0b10)}},
+		{"multiple characters", []byte("ABBAC"), []byte{0b10110110, 0b10111000}},
 	}
 
 	for _, tc := range table {
@@ -469,8 +469,8 @@ func TestHuffmanEncodeDecode(t *testing.T) {
 	}
 	table := []testCase{
 		{"empty message", []byte{}},
-		{"single character", []byte{'a'}},
-		{"multiple characters", []byte("abbacca")},
+		{"single character", []byte{'A'}},
+		{"multiple characters", []byte("ABBACCA")},
 	}
 
 	for _, tc := range table {

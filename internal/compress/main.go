@@ -349,7 +349,7 @@ func (t HuffmanTree) decode(codes []byte, out []byte) (usedBits, writtenBytes in
 			if !ok {
 				continue
 			}
-			// Only update usedBits when a sympol is decoded
+			// Only update usedBits when a symbol is decoded
 			usedBits = 8*i + bitN + 1
 
 			out[writtenBytes] = leaf.Symbol
