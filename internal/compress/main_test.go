@@ -76,75 +76,97 @@ func assertHuffmanTreeEqual(t *testing.T, expected, actual HuffmanTree) {
 	t.Helper()
 
 	if len(expected.Leaves) != len(actual.Leaves) {
-		t.Fatalf("expected %v leaves, got %v", len(expected.Leaves), len(actual.Leaves))
+		t.Errorf(
+			"leaf count mismatch: expected %d, got %d",
+			len(expected.Leaves),
+			len(actual.Leaves),
+		)
+		return
 	}
-	for i, expectedLeaf := range expected.Leaves {
-		actualLeaf := actual.Leaves[i]
-		if expectedLeaf.Symbol != actualLeaf.Symbol {
-			t.Errorf("expected %v, got %v", expectedLeaf.Symbol, actualLeaf.Symbol)
-		}
-		if expectedLeaf.Code != actualLeaf.Code {
-			t.Errorf("expected %v, got %v", expectedLeaf.Code, actualLeaf.Code)
-		}
-	}
-	if !maps.Equal(expected.LeavesBySymbol, actual.LeavesBySymbol) {
-		t.Errorf("expected %v, got %v", expected.LeavesBySymbol, actual.LeavesBySymbol)
-	}
-	if !maps.Equal(expected.LeavesByCode, actual.LeavesByCode) {
-		t.Errorf("expected %v, got %v", expected.LeavesByCode, actual.LeavesByCode)
-	}
-}
 
-func assertHuffmanTreeOk(t *testing.T, tree HuffmanTree) {
-	t.Helper()
-	bySymbol := tree.LeavesBySymbol
-	byCode := tree.LeavesByCode
-	if len(byCode) != len(bySymbol) {
-		t.Fatalf("incompatible map lengths: %v != %v", len(byCode), len(bySymbol))
+	// Leaves can be in any order, so we need to check that both maps have the same entries
+	actualLeaves := make(map[byte]huffmanLeaf, len(actual.Leaves))
+	for _, leaf := range actual.Leaves {
+		actualLeaves[leaf.Symbol] = *leaf
 	}
-	codeIndexes := make(map[uint32]bool, len(byCode))
-	for _, index := range byCode {
-		if codeIndexes[index] {
-			t.Fatalf("duplicate index %v", index)
+	expectedLeaves := make(map[byte]huffmanLeaf, len(expected.Leaves))
+	for _, leaf := range expected.Leaves {
+		expectedLeaves[leaf.Symbol] = *leaf
+	}
+	if !maps.Equal(expectedLeaves, actualLeaves) {
+		t.Errorf("leaves mismatch")
+	}
+
+	// Check that LeavesBySymbol points to the same leaves,
+	// independently from the actual indices
+	for symbol, expectedLeafIndex := range expected.LeavesBySymbol {
+		expectedLeaf := expected.Leaves[expectedLeafIndex]
+		actualLeafIndex, ok := actual.LeavesBySymbol[symbol]
+		if !ok {
+			t.Errorf("leaf for symbol 0x%x not found", symbol)
 		}
-		codeIndexes[index] = true
-	}
-	symbolIndexes := make(map[uint32]bool, len(bySymbol))
-	for _, index := range bySymbol {
-		if symbolIndexes[index] {
-			t.Fatalf("duplicate symbol %v", index)
+		actualLeaf := actual.Leaves[actualLeafIndex]
+		if *expectedLeaf != *actualLeaf {
+			t.Errorf("for symbol 0x%x expected leaf %v, got %v", symbol, expectedLeaf, actualLeaf)
 		}
-		symbolIndexes[index] = true
 	}
-	// compare the two maps
-	if !maps.Equal(codeIndexes, symbolIndexes) {
-		t.Fatalf("incompatible indexes")
+
+	// Check that LeavesByCode points to the same leaves,
+	// independently from the actual indices
+	for code, expectedLeafIndex := range expected.LeavesByCode {
+		expectedLeaf := expected.Leaves[expectedLeafIndex]
+		actualLeafIndex, ok := actual.LeavesByCode[code]
+		if !ok {
+			t.Errorf("leaf for code 0b%b not found", code)
+		}
+		actualLeaf := actual.Leaves[actualLeafIndex]
+		if *expectedLeaf != *actualLeaf {
+			t.Errorf("for code 0b%b expected leaf %v, got %v", code, expectedLeaf, actualLeaf)
+		}
 	}
 }
 
 func TestBuildHuffmanTree(t *testing.T) {
-	input := bytes.NewBufferString("")
-	_, err := BuildHuffmanTree(input)
-	if err == nil {
-		t.Errorf("expected an error due to empty slice")
-	}
-
-	input = bytes.NewBufferString("ABAC")
-	tree, err := BuildHuffmanTree(input)
-	if err != nil {
-		t.Fatalf("unexpected error %v", err)
-	}
-	expectedTree := huffmanTreeFromNode(
-		huffmanBuildingNode{
-			left: &huffmanBuildingNode{symbol: 'A'},
-			right: &huffmanBuildingNode{
-				left:  &huffmanBuildingNode{symbol: 'B'},
-				right: &huffmanBuildingNode{symbol: 'C'},
-			},
+	testCases := []struct {
+		name     string
+		input    string
+		expected HuffmanTree
+	}{
+		{
+			name:     "empty input",
+			input:    "",
+			expected: NewHuffmanTree([]*huffmanLeaf{}),
 		},
-	)
-	assertHuffmanTreeOk(t, tree)
-	assertHuffmanTreeEqual(t, expectedTree, tree)
+		{
+			name:  "single character",
+			input: "A",
+			expected: NewHuffmanTree(
+				[]*huffmanLeaf{
+					{Symbol: 'A', Code: huffmanCode{Codepoint: 0b1, Length: 1}},
+				},
+			),
+		},
+		{
+			name:  "multiple characters",
+			input: "AAABBAC",
+			expected: NewHuffmanTree(
+				[]*huffmanLeaf{
+					{Symbol: 'A', Code: huffmanCode{Codepoint: 0b10, Length: 2}},
+					{Symbol: 'B', Code: huffmanCode{Codepoint: 0b110, Length: 3}},
+					{Symbol: 'C', Code: huffmanCode{Codepoint: 0b111, Length: 3}},
+				},
+			),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tree, err := BuildHuffmanTree(bytes.NewBufferString(tc.input))
+			if err != nil {
+				t.Fatalf("unexpected error %v", err)
+			}
+			assertHuffmanTreeEqual(t, tc.expected, tree)
+		})
+	}
 }
 
 func TestBuildUniversalHuffmanTree(t *testing.T) {
@@ -190,13 +212,11 @@ func assertHuffmanDecoding(
 	}
 }
 
-var DefaultTree = huffmanTreeFromNode(
-	huffmanBuildingNode{
-		left: &huffmanBuildingNode{symbol: 'a'},
-		right: &huffmanBuildingNode{
-			left:  &huffmanBuildingNode{symbol: 'b'},
-			right: &huffmanBuildingNode{symbol: 'c'},
-		},
+var DefaultTree = NewHuffmanTree(
+	[]*huffmanLeaf{
+		{Symbol: 'a', Code: huffmanCode{Codepoint: 0b1, Length: 1}},
+		{Symbol: 'b', Code: huffmanCode{Codepoint: 0b10, Length: 2}},
+		{Symbol: 'c', Code: huffmanCode{Codepoint: 0b11, Length: 2}},
 	},
 )
 
@@ -297,11 +317,11 @@ func alignToLeft8(x byte) byte {
 }
 
 func Test_decodeHuffmanEmpty(t *testing.T) {
-	tree := newHuffmanTree()
+	tree := NewHuffmanTree([]*huffmanLeaf{})
 	codes := []byte{}
 	assertHuffmanDecoding(t, tree, codes, 0, 0, ErrEmptyTree, nil)
 
-	tree = huffmanTreeFromNode(huffmanBuildingNode{left: nil, right: nil})
+	tree = NewHuffmanTree([]*huffmanLeaf{})
 	assertHuffmanDecoding(t, tree, codes, 0, 0, nil, nil)
 }
 
@@ -486,6 +506,5 @@ func TestImportHuffmanTreeJSON(t *testing.T) {
 		t.Fatalf("unexpected error %v", err)
 	}
 
-	assertHuffmanTreeOk(t, tree)
 	assertHuffmanTreeEqual(t, DefaultTree, tree)
 }

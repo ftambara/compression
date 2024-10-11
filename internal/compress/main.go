@@ -162,8 +162,8 @@ var (
 
 type HuffmanTree struct {
 	Leaves         []*huffmanLeaf
-	LeavesByCode   map[codepoint]uint32
-	LeavesBySymbol map[byte]uint32
+	LeavesByCode   map[codepoint]uint64
+	LeavesBySymbol map[byte]uint64
 }
 
 func BuildHuffmanTree(input io.Reader) (HuffmanTree, error) {
@@ -208,19 +208,31 @@ func BuildUniversalHuffmanTree(input io.Reader) (HuffmanTree, error) {
 	return huffmanTreeFromCounts(freqs)
 }
 
-// huffmanBuildingNode might represent a leaf (if left == nil && right == nil)
-// or an internal huffmanBuildingNode
-// It's only goal is to be a helper to builder code. A tree does not contain
-// huffmanBuildingNode instances
-type huffmanBuildingNode struct {
-	left, right *huffmanBuildingNode
-	symbol      byte
-	code        codepoint
+func NewHuffmanTree(leaves []*huffmanLeaf) HuffmanTree {
+	tree := HuffmanTree{
+		Leaves:         leaves,
+		LeavesByCode:   make(map[codepoint]uint64, len(leaves)),
+		LeavesBySymbol: make(map[byte]uint64, len(leaves)),
+	}
+	for i, leaf := range leaves {
+		tree.LeavesByCode[leaf.Code.Codepoint] = uint64(i)
+		tree.LeavesBySymbol[leaf.Symbol] = uint64(i)
+	}
+	return tree
 }
 
 func huffmanTreeFromCounts(symbolFrequencies []symbolCount) (HuffmanTree, error) {
 	if len(symbolFrequencies) == 0 {
-		return HuffmanTree{}, errors.New("empty symbolFrequencies")
+		return NewHuffmanTree([]*huffmanLeaf{}), nil
+	}
+
+	// huffmanBuildingNode might represent a leaf (if left == nil && right == nil)
+	// or an internal huffmanBuildingNode
+	// It's only goal is to be a helper to builder code. A tree does not contain
+	// huffmanBuildingNode instances
+	type huffmanBuildingNode struct {
+		left, right *huffmanBuildingNode
+		symbol      byte
 	}
 
 	// initialize queue items
@@ -235,27 +247,13 @@ func huffmanTreeFromCounts(symbolFrequencies []symbolCount) (HuffmanTree, error)
 	// iteratively build tree using Huffman algorithm
 	queue := pq.NewPriorityQueue(items)
 	for queue.Len() >= 2 {
-		node1 := queue.Pop()
-		node2 := queue.Pop()
+		right := queue.Pop()
+		left := queue.Pop()
 		queue.Push(pq.PQItem[*huffmanBuildingNode]{
-			Value:    &huffmanBuildingNode{left: node1.Value, right: node2.Value},
-			Priority: node1.Priority + node2.Priority,
+			Value:    &huffmanBuildingNode{left: left.Value, right: right.Value},
+			Priority: left.Priority + right.Priority,
 		})
 	}
-	root := queue.Pop().Value
-	return huffmanTreeFromNode(*root), nil
-}
-
-func newHuffmanTree() HuffmanTree {
-	return HuffmanTree{
-		Leaves:         make([]*huffmanLeaf, 0),
-		LeavesByCode:   make(map[codepoint]uint32),
-		LeavesBySymbol: make(map[byte]uint32),
-	}
-}
-
-func huffmanTreeFromNode(root huffmanBuildingNode) HuffmanTree {
-	tree := newHuffmanTree()
 
 	// traverse tree to find the codepoint for each leaf
 	type stackItem struct {
@@ -264,8 +262,10 @@ func huffmanTreeFromNode(root huffmanBuildingNode) HuffmanTree {
 	}
 
 	// New trees have a "hidden" root that makes all valid codes start with 1
-	actualRoot := huffmanBuildingNode{left: nil, right: &root}
+	root := queue.Pop().Value
+	actualRoot := huffmanBuildingNode{left: nil, right: root}
 	nodeStack := []stackItem{{&actualRoot, []byte{}}}
+	leaves := make([]*huffmanLeaf, 0)
 
 	for len(nodeStack) != 0 {
 		item := nodeStack[len(nodeStack)-1]
@@ -281,7 +281,7 @@ func huffmanTreeFromNode(root huffmanBuildingNode) HuffmanTree {
 				codept = (codept << 1) + codepoint(b)
 			}
 			hcode := huffmanCode{Codepoint: codept, Length: len(item.accumCode)}
-			tree.appendLeaf(huffmanLeaf{Symbol: node.symbol, Code: hcode})
+			leaves = append(leaves, &huffmanLeaf{Symbol: node.symbol, Code: hcode})
 			continue
 		}
 		if node.left != nil {
@@ -296,13 +296,7 @@ func huffmanTreeFromNode(root huffmanBuildingNode) HuffmanTree {
 			nodeStack = append(nodeStack, stackItem{node.right, append(item.accumCode, 1)})
 		}
 	}
-	return tree
-}
-
-func (t *HuffmanTree) appendLeaf(leaf huffmanLeaf) {
-	t.LeavesByCode[leaf.Code.Codepoint] = uint32(len(t.Leaves))
-	t.LeavesBySymbol[leaf.Symbol] = uint32(len(t.Leaves))
-	t.Leaves = append(t.Leaves, &leaf)
+	return NewHuffmanTree(leaves), nil
 }
 
 func (t HuffmanTree) ExportJSON(w io.Writer) error {
@@ -393,6 +387,10 @@ type huffmanLeaf struct {
 	Code   huffmanCode
 }
 
+func (l huffmanLeaf) String() string {
+	return fmt.Sprintf("{%c, 0x%x}", l.Symbol, l.Code.Codepoint)
+}
+
 type symbolCount struct {
 	Symbol byte
 	Count  int
@@ -401,10 +399,6 @@ type symbolCount struct {
 const codepointMaxLength = 16
 
 type codepoint uint16
-
-func (c codepoint) toBytes() []byte {
-	return []byte{byte(c)}
-}
 
 type huffmanCode struct {
 	Codepoint codepoint
